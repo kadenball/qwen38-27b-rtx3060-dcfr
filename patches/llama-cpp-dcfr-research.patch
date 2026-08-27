@@ -1,0 +1,3408 @@
+diff --git a/common/common.cpp b/common/common.cpp
+index 3d54bd6..1fd3d2a 100644
+--- a/common/common.cpp
++++ b/common/common.cpp
+@@ -1324,6 +1324,7 @@ common_init_result::common_init_result(common_params & params, bool model_only)
+             params.fit_params_min_ctx,
+             has_draft || spec_mtp ? &extra : nullptr,
+             params.verbosity >= LOG_LEVEL_DEBUG ? GGML_LOG_LEVEL_DEBUG : GGML_LOG_LEVEL_ERROR);
++        COM_INF("fit selected n_gpu_layers = %d\n", mparams.n_gpu_layers);
+     }
+ 
+     llama_model * model = llama_model_load_from_file(params.model.path.c_str(), mparams);
+diff --git a/common/speculative.cpp b/common/speculative.cpp
+index 4eef221..0b6e0e8 100644
+--- a/common/speculative.cpp
++++ b/common/speculative.cpp
+@@ -304,6 +304,7 @@ struct common_speculative_impl_draft_simple : public common_speculative_impl {
+         }
+ 
+         int i = 0;
++        std::vector<float> path_probability(n_seq, 1.0f);
+ 
+         while (n_drafting > 0) {
+             int i_batch = 0;
+@@ -339,12 +340,25 @@ struct common_speculative_impl_draft_simple : public common_speculative_impl {
+                     continue;
+                 }
+ 
+-                common_sampler_accept(smpl, id, true);
+-
+                 auto & dp = dparams.at(seq_id);
+                 auto & result = *dp.result;
+ 
++                if (dp.alternatives != nullptr) {
++                    const int32_t position = (int32_t) result.size();
++                    for (int k = 1; k < std::min(3, (int) cur_p->size); ++k) {
++                        dp.alternatives->push_back({
++                            /* .position                = */ position,
++                            /* .rank                    = */ k + 1,
++                            /* .token                   = */ cur_p->data[k].id,
++                            /* .conditional_probability = */ cur_p->data[k].p,
++                            /* .path_probability        = */ path_probability[seq_id] * cur_p->data[k].p,
++                        });
++                    }
++                }
++
++                common_sampler_accept(smpl, id, true);
+                 result.push_back(id);
++                path_probability[seq_id] *= cur_p->data[0].p;
+ 
+                 if ((params.n_max <= (int) result.size()) ||
+                     (dp.n_max > 0 && dp.n_max <= (int) result.size())) {
+@@ -1582,6 +1596,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+         }
+ 
+         int i = 0;
++        std::vector<float> path_probability(n_seq, 1.0f);
+ 
+         while (n_drafting > 0) {
+             // each step decodes under a different head, i.e. a different decoder layer, and
+@@ -1640,12 +1655,25 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+                     continue;
+                 }
+ 
+-                common_sampler_accept(smpl, id, true);
+-
+                 auto & dp = dparams.at(seq_id);
+                 auto & result = *dp.result;
+ 
++                if (dp.alternatives != nullptr) {
++                    const int32_t position = (int32_t) result.size();
++                    for (int k = 1; k < std::min(3, (int) cur_p->size); ++k) {
++                        dp.alternatives->push_back({
++                            /* .position                = */ position,
++                            /* .rank                    = */ k + 1,
++                            /* .token                   = */ cur_p->data[k].id,
++                            /* .conditional_probability = */ cur_p->data[k].p,
++                            /* .path_probability        = */ path_probability[seq_id] * cur_p->data[k].p,
++                        });
++                    }
++                }
++
++                common_sampler_accept(smpl, id, true);
+                 result.push_back(id);
++                path_probability[seq_id] *= cur_p->data[0].p;
+ 
+                 if (params.n_max <= (int) result.size()) {
+                     drafting[seq_id] = false;
+@@ -1714,6 +1742,29 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+         const size_t row_bytes = (size_t) n_embd * sizeof(float);
+         std::memcpy(pending_h[seq_id].data(), verify_h[seq_id].data() + (size_t) i_h * n_embd, row_bytes);
+     }
++
++    bool get_state(llama_seq_id seq_id, std::vector<uint8_t> & data) const override {
++        if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq) {
++            return false;
++        }
++
++        const size_t state_size = (size_t) n_embd * sizeof(float);
++        data.resize(state_size);
++        std::memcpy(data.data(), pending_h[seq_id].data(), state_size);
++        return true;
++    }
++
++    void set_state(llama_seq_id seq_id, const std::vector<uint8_t> & data) override {
++        if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq) {
++            return;
++        }
++
++        const size_t state_size = (size_t) n_embd * sizeof(float);
++        if (data.size() != state_size) {
++            return;
++        }
++        std::memcpy(pending_h[seq_id].data(), data.data(), state_size);
++    }
+ };
+ 
+ // state of self-speculation (simple implementation, not ngram-map)
+@@ -2634,6 +2685,9 @@ void common_speculative_draft(common_speculative * spec) {
+             GGML_ASSERT(!dp.drafting || dp.result->empty());
+ 
+             if (dp.drafting) {
++                if (dp.alternatives != nullptr) {
++                    dp.alternatives->clear();
++                }
+                 n_drafting++;
+             }
+         }
+@@ -2741,6 +2795,16 @@ void common_speculative_accept(common_speculative * spec, llama_seq_id seq_id, u
+     }
+ }
+ 
++void common_speculative_select_state(common_speculative * spec, llama_seq_id seq_id, uint16_t n_accepted) {
++    if (spec == nullptr || seq_id < 0 || seq_id >= (llama_seq_id) spec->dparams.size()) {
++        return;
++    }
++
++    for (auto & impl : spec->impls) {
++        impl->accept(seq_id, n_accepted, true);
++    }
++}
++
+ // TODO: support the case of more than one speculative implementations having a state
+ bool common_speculative_get_state(common_speculative * spec, llama_seq_id seq_id, std::vector<uint8_t> & data) {
+     if (spec == nullptr) {
+diff --git a/common/speculative.h b/common/speculative.h
+index 12ae31b..40bc15c 100644
+--- a/common/speculative.h
++++ b/common/speculative.h
+@@ -41,6 +41,17 @@ common_speculative * common_speculative_init(common_params_speculative & params,
+ 
+ void common_speculative_free(common_speculative * spec);
+ 
++// An alternate token already scored while producing a greedy MTP chain.
++// `position` is zero-based within common_speculative_draft_params::result and
++// `path_probability` includes the greedy-prefix probabilities before it.
++struct common_speculative_alternative {
++    int32_t     position;
++    int32_t     rank;
++    llama_token token;
++    float       conditional_probability;
++    float       path_probability;
++};
++
+ struct common_speculative_draft_params {
+     // this flag is used to chain the drafts through all the available implementations
+     // after the first successful draft from an implementation, we set it
+@@ -60,6 +71,11 @@ struct common_speculative_draft_params {
+ 
+     // the generated draft from the last _draft() call
+     llama_tokens * result;
++
++    // Optional MTP top-k side channel. Other speculative implementations leave
++    // this empty. It lets an executor build a verification tree without a
++    // second draft-model pass or changing the ordinary greedy-chain result.
++    std::vector<common_speculative_alternative> * alternatives = nullptr;
+ };
+ 
+ common_speculative_draft_params & common_speculative_get_draft_params(common_speculative * spec, llama_seq_id seq_id);
+@@ -76,6 +92,10 @@ void common_speculative_draft(common_speculative * spec);
+ // informs the speculative context that n_accepted tokens were accepted by the target model
+ void common_speculative_accept(common_speculative * spec, llama_seq_id, uint16_t n_accepted);
+ 
++// Select a verified row for an auxiliary sequence without changing draft
++// statistics or the implementation chosen for a serving slot.
++void common_speculative_select_state(common_speculative * spec, llama_seq_id, uint16_t n_accepted);
++
+ // (optional) get/set internal state
+ bool common_speculative_get_state(common_speculative * spec, llama_seq_id seq_id, std::vector<uint8_t> & data);
+ void common_speculative_set_state(common_speculative * spec, llama_seq_id seq_id, const std::vector<uint8_t> & data);
+diff --git a/ggml/include/ggml.h b/ggml/include/ggml.h
+index 32462d7..0421e1b 100644
+--- a/ggml/include/ggml.h
++++ b/ggml/include/ggml.h
+@@ -2459,6 +2459,16 @@ extern "C" {
+             struct ggml_tensor  * sx,
+             struct ggml_tensor  * c);
+ 
++    GGML_API struct ggml_tensor * ggml_ssm_conv_tree(
++            struct ggml_context * ctx,
++            struct ggml_tensor  * x,
++            struct ggml_tensor  * c,
++            struct ggml_tensor  * state,
++            struct ggml_tensor  * replay_factors,
++            struct ggml_tensor  * tree_parent,
++            struct ggml_tensor  * replay_path,
++            int64_t               factor_slots);
++
+     GGML_API struct ggml_tensor * ggml_ssm_scan(
+             struct ggml_context * ctx,
+             struct ggml_tensor  * s,
+@@ -2582,6 +2592,8 @@ extern "C" {
+     // the output packs the attention scores [S_v, H_v, n_tokens, n_seqs] followed by K state
+     // snapshots, most-recent first (slot 0 = final state, slot s = state s tokens back). K == 1
+     // keeps only the final state; when n_tokens < K only slots 0..n_tokens-1 are written.
++    // Experimental scalar-gate compact mode uses K < 0.  In that mode the tail is one final
++    // state followed by -K [gate, key, delta] factor slots, newest first.
+     GGML_API struct ggml_tensor * ggml_gated_delta_net(
+             struct ggml_context * ctx,
+             struct ggml_tensor  * q,
+@@ -2590,8 +2602,24 @@ extern "C" {
+             struct ggml_tensor  * g,
+             struct ggml_tensor  * beta,
+             struct ggml_tensor  * state,
++            struct ggml_tensor  * replay_factors,
++            struct ggml_tensor  * replay_meta,
+             int64_t               K);
+ 
++    GGML_API struct ggml_tensor * ggml_gated_delta_net_tree(
++            struct ggml_context * ctx,
++            struct ggml_tensor  * q,
++            struct ggml_tensor  * k,
++            struct ggml_tensor  * v,
++            struct ggml_tensor  * g,
++            struct ggml_tensor  * beta,
++            struct ggml_tensor  * state,
++            struct ggml_tensor  * replay_factors,
++            struct ggml_tensor  * tree_parent,
++            struct ggml_tensor  * replay_path,
++            int64_t               factor_slots,
++            int64_t               main_nodes);
++
+     // DSA lightning indexer
+     //
+     // q:       [n_embd_idx, n_head_idx, n_batch, ne3 ]
+diff --git a/ggml/src/ggml-cpu/ggml-cpu.c b/ggml/src/ggml-cpu/ggml-cpu.c
+index 87ac0a7..96a2ebc 100644
+--- a/ggml/src/ggml-cpu/ggml-cpu.c
++++ b/ggml/src/ggml-cpu/ggml-cpu.c
+@@ -2990,7 +2990,8 @@ struct ggml_cplan ggml_graph_plan(
+                     {
+                         const int64_t S_v = node->src[2]->ne[0];
+                         const int64_t K   = ggml_get_op_params_i32(node, 0);
+-                        const int64_t per_thread = S_v + (K > 1 ? S_v * S_v : 0);
++                        const bool transactional = node->src[6] != NULL;
++                        const int64_t per_thread = S_v + ((K > 1 || transactional) ? S_v * S_v : 0);
+                         cur = per_thread * sizeof(float) * n_tasks;
+                     } break;
+                 case GGML_OP_COUNT:
+diff --git a/ggml/src/ggml-cpu/ops.cpp b/ggml/src/ggml-cpu/ops.cpp
+index b869f4b..d48ea72 100644
+--- a/ggml/src/ggml-cpu/ops.cpp
++++ b/ggml/src/ggml-cpu/ops.cpp
+@@ -9570,6 +9570,53 @@ static void ggml_compute_forward_ssm_conv_f32(
+     const int ith = params->ith;
+     const int nth = params->nth;
+ 
++    if (dst->src[2] != nullptr) {
++        const int64_t channels = src0->ne[0];
++        const int64_t nodes = src0->ne[1];
++        const int64_t dr = (channels + nth - 1)/nth;
++        const int64_t c0 = dr*ith;
++        const int64_t c1 = MIN(c0 + dr, channels);
++        const float * x = (const float *) src0->data;
++        const float * weights = (const float *) src1->data;
++        const float * state = (const float *) dst->src[2]->data;
++        const float * replay = (const float *) dst->src[3]->data;
++        const int32_t * parent = (const int32_t *) dst->src[4]->data;
++        const int32_t * path = (const int32_t *) dst->src[5]->data;
++        float * out = (float *) dst->data;
++        float * state_out = out + channels*nodes;
++        float * factor_out = state_out + 3*channels;
++
++        for (int64_t channel = c0; channel < c1; ++channel) {
++            float base[3] = {state[channel*3], state[channel*3 + 1], state[channel*3 + 2]};
++            for (int i = 0; i < path[0]; ++i) {
++                base[0] = base[1];
++                base[1] = base[2];
++                base[2] = replay[(int64_t) path[i + 1]*channels + channel];
++            }
++            memcpy(state_out + channel*3, base, 3*sizeof(float));
++
++            const float * w = weights + channel*4;
++            for (int node = 0; node < nodes; ++node) {
++                int ancestors[3];
++                int count = 0;
++                for (int current = parent[node]; current >= 0 && count < 3; current = parent[current]) {
++                    ancestors[count++] = current;
++                }
++                float window[3] = {base[0], base[1], base[2]};
++                for (int i = count - 1; i >= 0; --i) {
++                    window[0] = window[1];
++                    window[1] = window[2];
++                    window[2] = x[(int64_t) ancestors[i]*channels + channel];
++                }
++                const float current = x[(int64_t) node*channels + channel];
++                out[(int64_t) node*channels + channel] =
++                        window[0]*w[0] + window[1]*w[1] + window[2]*w[2] + current*w[3];
++                factor_out[(int64_t) node*channels + channel] = current;
++            }
++        }
++        return;
++    }
++
+     const int nc  = src1->ne[0]; // d_conv
+     const int ncs = src0->ne[0]; // d_conv - 1 + n_t
+     const int nr  = src0->ne[1]; // d_inner
+@@ -10761,6 +10808,10 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+     ggml_tensor * src_g     = dst->src[3];
+     ggml_tensor * src_beta  = dst->src[4];
+     ggml_tensor * src_state = dst->src[5];
++    ggml_tensor * src_replay_factors = dst->src[6];
++    ggml_tensor * src_replay_meta    = dst->src[7];
++    ggml_tensor * src_tree_parent    = dst->src[8];
++    ggml_tensor * src_tree_replay    = dst->src[9];
+ 
+     const int64_t S_v      = src_v->ne[0];
+     const int64_t H        = src_v->ne[1];
+@@ -10789,25 +10840,37 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+ 
+     const bool kda = (neg0 == S_v);
+ 
+-    // K (snapshot slot count) is an op param; state holds s0 only [S_v, S_v, H, n_seqs].
+-    const int64_t K = ggml_get_op_params_i32(dst, 0);
++    // Positive K selects full snapshots.  Negative K selects compact scalar-GDN
++    // factors, with -K rollback records plus one final state.
++    const int64_t K_raw       = ggml_get_op_params_i32(dst, 0);
++    const bool    compact     = K_raw < 0;
++    const bool    transactional = src_replay_factors != nullptr;
++    const bool    tree          = src_tree_parent != nullptr;
++    const int64_t K           = compact ? 1 : K_raw;
++    const int64_t n_factors   = compact ? -K_raw : 0;
++    const int64_t factor_size = (1 + 2*S_v) * H;
+     GGML_ASSERT(K >= 1);
++    GGML_ASSERT(!compact || !kda);
++    GGML_ASSERT(!transactional || compact);
+     // per-seq stride in floats (seq s starts at state + s * seq_stride)
+     const int64_t state_seq_stride = src_state->nb[3] / sizeof(float);
+ 
+-    const int64_t per_thread = S_v + (K > 1 ? S_v * S_v : 0);
++    const int64_t per_thread = S_v + ((K > 1 || transactional) ? S_v * S_v : 0);
+     const int ith = params->ith;
+ 
+     float * delta       = (float *)params->wdata + ith * per_thread + CACHE_LINE_SIZE_F32;
+-    float * state_work  = K > 1 ? (delta + S_v) : nullptr;
++    float * state_work  = (K > 1 || transactional) ? (delta + S_v) : nullptr;
+ 
+     // output layout: [attn_scores | new_states]
+     // attn_scores: S_v * H * n_tokens * n_seqs    floats
+-    // new_states:  S_v * S_v * H * n_seqs * K     floats  (K snapshot slots; last min(n_tokens, K))
++    // normal tail:  K full snapshots
++    // compact tail: one final state, then n_factors compact records
++    // transactional tail: accepted state before the current batch, then factors
+     const int64_t attn_score_elems    = S_v * H * n_tokens * n_seqs;
+     const int64_t state_size_per_snap = S_v * S_v * H * n_seqs;
+     float * attn_out_base  = (float *)dst->data;
+     float * state_out_base = (float *)dst->data + attn_score_elems;
++    float * factor_out_base = compact ? state_out_base + state_size_per_snap : nullptr;
+ 
+     // snapshot slot mapping: slot 0 = most recent state, slot s = s tokens back.
+     // When n_tokens < K only slots 0..n_tokens-1 are written; older slots are caller-owned.
+@@ -10833,7 +10896,7 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+ 
+         // For K=1, write directly to the single output slot to avoid an extra memcpy at the end.
+         // For K>1, work in scratch and copy out per-token when the slot is in range.
+-        float * s_out = (K > 1)
++        float * s_out = (K > 1 || transactional)
+             ? state_work
+             : state_out_base + (iv3 * H + iv1) * S_v * S_v;
+ 
+@@ -10842,6 +10905,37 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+         const float * s_in = state_in_base + iv3 * state_seq_stride + iv1 * S_v * S_v;
+         memcpy(s_out, s_in, S_v * S_v * sizeof(float));
+ 
++        if (transactional) {
++            const int32_t * meta = tree
++                ? (const int32_t *) src_tree_replay->data + iv3*src_tree_replay->ne[0]
++                : (const int32_t *) src_replay_meta->data + 2*iv3;
++            const int32_t first = tree ? 0 : meta[0];
++            const int32_t count = tree ? meta[0] : meta[1];
++            const int64_t head_factor_size = 1 + 2*S_v;
++            const float * replay_base = (const float *) src_replay_factors->data +
++                    iv3*n_factors*factor_size + iv1*head_factor_size;
++
++            for (int32_t item = 0; item < count; ++item) {
++                const int32_t slot = tree ? meta[item + 1] : first + count - 1 - item;
++                const float * factor = replay_base + slot*factor_size;
++                const float gate = expf(factor[0]);
++                const float * key = factor + 1;
++                const float * replay_delta = factor + 1 + S_v;
++                ggml_vec_scale_f32(S_v*S_v, s_out, gate);
++                for (int64_t j = 0; j < S_v; ++j) {
++                    ggml_vec_mad_f32(S_v, &s_out[j*S_v], key, replay_delta[j]);
++                }
++            }
++
++            float * committed = state_out_base + (iv3*H + iv1)*S_v*S_v;
++            memcpy(committed, s_out, S_v*S_v*sizeof(float));
++        }
++
++        std::vector<float> tree_base;
++        if (tree) {
++            tree_base.assign(s_out, s_out + S_v*S_v);
++        }
++
+         // attn output pointer for first token of this (head, seq)
+         float * attn_data = attn_out_base + (iv3 * n_tokens * H + iv1) * S_v;
+ 
+@@ -10853,6 +10947,21 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+             const float beta_val = *(const float *)((const char *)src_beta->data + iv3 * nbb3 + t * nbb2 + iv1 * nbb1);
+             const float * g_d    =  (const float *)((const char *)src_g->data    + iv3 * nbg3 + t * nbg2 + iv1 * nbg1);
+ 
++            if (tree && t >= ggml_get_op_params_i32(dst, 1)) {
++                memcpy(s_out, tree_base.data(), S_v*S_v*sizeof(float));
++                const int32_t parent = ((const int32_t *) src_tree_parent->data)[t];
++                for (int32_t ancestor = 0; ancestor <= parent; ++ancestor) {
++                    const float * factor = factor_out_base +
++                            iv3*n_factors*factor_size + ancestor*factor_size + iv1*(1 + 2*S_v);
++                    ggml_vec_scale_f32(S_v*S_v, s_out, expf(factor[0]));
++                    const float * key = factor + 1;
++                    const float * prior_delta = factor + 1 + S_v;
++                    for (int64_t j = 0; j < S_v; ++j) {
++                        ggml_vec_mad_f32(S_v, &s_out[j*S_v], key, prior_delta[j]);
++                    }
++                }
++            }
++
+             // state is stored transposed: s_out[j*S_v + i] = S[i][j]
+             // so row j of s_out = column j of S (contiguous access)
+ 
+@@ -10890,7 +10999,20 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+ 
+             attn_data += S_v * H; // advance to next token
+ 
+-            if (K > 1) {
++            if (compact) {
++                const int64_t target_slot = tree ? t : n_tokens - 1 - t;
++                if (target_slot >= 0 && target_slot < n_factors) {
++                    float * factor = factor_out_base +
++                            iv3 * n_factors * factor_size +
++                            target_slot * factor_size +
++                            iv1 * (1 + 2*S_v);
++                    factor[0] = g_d[0];
++                    memcpy(factor + 1,       k_d,  S_v * sizeof(float));
++                    memcpy(factor + 1 + S_v, delta, S_v * sizeof(float));
++                }
++            }
++
++            if (!compact && K > 1) {
+                 const int64_t target_slot = n_tokens - 1 - t;
+                 if (target_slot >= 0 && target_slot < K) {
+                     float * curr_state_o = state_out_base + target_slot * state_size_per_snap +
+@@ -10899,6 +11021,14 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+                 }
+             }
+         }
++
++        // Bounded speculative ubatches defer the candidate and represent it
++        // only by factors.  Large prompt ubatches cannot fit all factors, so
++        // commit their final state directly into the same plane.
++        if (transactional && !tree && n_tokens > n_factors) {
++            float * committed = state_out_base + (iv3*H + iv1)*S_v*S_v;
++            memcpy(committed, s_out, S_v*S_v*sizeof(float));
++        }
+     }
+ }
+ 
+diff --git a/ggml/src/ggml-cuda/gated_delta_net.cu b/ggml/src/ggml-cuda/gated_delta_net.cu
+index 1b431a7..6263794 100644
+--- a/ggml/src/ggml-cuda/gated_delta_net.cu
++++ b/ggml/src/ggml-cuda/gated_delta_net.cu
+@@ -1,7 +1,7 @@
+ #include "gated_delta_net.cuh"
+ #include "ggml-cuda/common.cuh"
+ 
+-template <int S_v, bool KDA, bool keep_rs_t>
++template <int S_v, bool KDA, bool keep_rs_t, bool compact_t>
+ __global__ void __launch_bounds__((ggml_cuda_get_physical_warp_size() < S_v ? ggml_cuda_get_physical_warp_size() : S_v) * 4, 2)
+ gated_delta_net_cuda(const float * q,
+                                      const float * k,
+@@ -9,8 +9,11 @@ gated_delta_net_cuda(const float * q,
+                                      const float * g,
+                                      const float * beta,
+                                      const float * curr_state,
++                                     const float * replay_factors,
++                                     const int32_t * replay_meta,
+                                      float *       dst,
+                                      float *       state,
++                                     float *       factors,
+                                      int64_t       H,
+                                      int64_t       n_tokens,
+                                      int64_t       n_seqs,
+@@ -27,7 +30,8 @@ gated_delta_net_cuda(const float * q,
+                                      const uint3   rq3_magic,
+                                      float         scale,
+                                      int64_t       state_slot_stride,
+-                                     int           K) {
++                                     int           K,
++                                     int           n_factors) {
+     const uint32_t h_idx    = blockIdx.x;
+     const uint32_t sequence = blockIdx.y;
+     // each warp owns one column, using warp-level primitives to reduce across rows
+@@ -60,6 +64,32 @@ gated_delta_net_cuda(const float * q,
+         s_shard[r]  = curr_state[i];
+     }
+ 
++    if (replay_factors != nullptr) {
++        constexpr int head_factor_size = 1 + 2*S_v;
++        const int64_t factor_size = (int64_t) head_factor_size * H;
++        const int first = replay_meta[2*sequence];
++        const int count = replay_meta[2*sequence + 1];
++        const float * replay_base = replay_factors +
++                sequence*n_factors*factor_size + h_idx*head_factor_size;
++
++        for (int slot = first + count - 1; slot >= first; --slot) {
++            const float * factor = replay_base + slot*factor_size;
++            const float gate = expf(factor[0]);
++            const float delta_col = factor[1 + S_v + col];
++#pragma unroll
++            for (int r = 0; r < rows_per_lane; ++r) {
++                const int i = r*warp_size + lane;
++                s_shard[r] = gate*s_shard[r] + factor[1 + i]*delta_col;
++            }
++        }
++
++#pragma unroll
++        for (int r = 0; r < rows_per_lane; ++r) {
++            const int i = r*warp_size + lane;
++            state[col*S_v + i] = s_shard[r];
++        }
++    }
++
+     for (int t = 0; t < n_tokens; t++) {
+         const float * q_t = q + iq3 * sq3 + t * sq2 + iq1 * sq1;
+         const float * k_t = k + iq3 * sq3 + t * sq2 + iq1 * sq1;
+@@ -109,6 +139,29 @@ gated_delta_net_cuda(const float * q,
+             if (lane == 0) {
+                 attn_data[col] = attn_col * scale;
+             }
++
++            if constexpr (compact_t) {
++                const int target_slot = (int) n_tokens - 1 - t;
++                if (target_slot >= 0 && target_slot < n_factors) {
++                    constexpr int head_factor_size = 1 + 2*S_v;
++                    const int64_t factor_size = (int64_t) head_factor_size * H;
++                    float * factor = factors +
++                            sequence * n_factors * factor_size +
++                            target_slot * factor_size +
++                            h_idx * head_factor_size;
++                    if (lane == 0) {
++                        factor[0] = *g_t;
++                        factor[1 + S_v + col] = delta_col;
++                    }
++                    if (col == 0) {
++#pragma unroll
++                        for (int r = 0; r < rows_per_lane; ++r) {
++                            const int i = r * warp_size + lane;
++                            factor[1 + i] = k_reg[r];
++                        }
++                    }
++                }
++            }
+         } else {
+             // kv[col] = sum_i g[i] * S[i][col] * k[i]
+             float kv_shard = 0.0f;
+@@ -158,25 +211,198 @@ gated_delta_net_cuda(const float * q,
+     }
+ 
+     if constexpr (!keep_rs_t) {
++        // Transactional batches no larger than the factor ring are deferred.
++        // Large prompt batches commit directly because their complete factor
++        // history is intentionally not retained.
++        if (replay_factors == nullptr || n_tokens > n_factors) {
+ #pragma unroll
+-        for (int r = 0; r < rows_per_lane; r++) {
+-            const int i          = r * warp_size + lane;
+-            state[col * S_v + i] = s_shard[r];
++            for (int r = 0; r < rows_per_lane; r++) {
++                const int i = r * warp_size + lane;
++                state[col * S_v + i] = s_shard[r];
++            }
++        }
++    }
++}
++
++template <int S_v>
++__global__ void gated_delta_net_tree_cuda(
++        const float * q,
++        const float * k,
++        const float * v,
++        const float * g,
++        const float * beta,
++        const float * curr_state,
++        const float * replay_factors,
++        const int32_t * replay_path,
++        const int32_t * parent,
++        float * dst,
++        float * state,
++        float * factors,
++        int64_t H,
++        int64_t n_tokens,
++        int64_t sq1,
++        int64_t sq2,
++        int64_t sv1,
++        int64_t sv2,
++        int64_t sb1,
++        int64_t sb2,
++        const uint3 neqk1_magic,
++        float scale,
++        int n_factors,
++        int main_nodes) {
++    constexpr int max_nodes = 32;
++    const uint32_t h_idx = blockIdx.x;
++    const int lane = threadIdx.x;
++    const int col = blockIdx.z * blockDim.y + threadIdx.y;
++    const uint32_t iq1 = fastmodulo(h_idx, neqk1_magic);
++
++    constexpr int warp_size = ggml_cuda_get_physical_warp_size() < S_v ? ggml_cuda_get_physical_warp_size() : S_v;
++    constexpr int rows_per_lane = (S_v + warp_size - 1) / warp_size;
++    float s_shard[rows_per_lane];
++    float base_shard[rows_per_lane];
++    float delta_history[max_nodes];
++
++    const int64_t state_offset = h_idx * S_v * S_v + col * S_v;
++    const float * state_in = curr_state + state_offset;
++    float * state_out = state + h_idx * S_v * S_v + col * S_v;
++    float * attn_data = dst + h_idx * S_v;
++
++#pragma unroll
++    for (int r = 0; r < rows_per_lane; ++r) {
++        s_shard[r] = state_in[r * warp_size + lane];
++    }
++
++    const int replay_count = replay_path[0];
++    const int64_t head_factor_size = 1 + 2*S_v;
++    const int64_t factor_size = head_factor_size * H;
++    for (int i = 0; i < replay_count; ++i) {
++        const int slot = replay_path[i + 1];
++        const float * factor = replay_factors + slot*factor_size + h_idx*head_factor_size;
++        const float gate = expf(factor[0]);
++        const float delta_col = factor[1 + S_v + col];
++#pragma unroll
++        for (int r = 0; r < rows_per_lane; ++r) {
++            const int row = r*warp_size + lane;
++            s_shard[r] = gate*s_shard[r] + factor[1 + row]*delta_col;
++        }
++    }
++
++#pragma unroll
++    for (int r = 0; r < rows_per_lane; ++r) {
++        base_shard[r] = s_shard[r];
++        state_out[r*warp_size + lane] = s_shard[r];
++    }
++
++    for (int t = 0; t < n_tokens; ++t) {
++        const float * q_t = q + t*sq2 + iq1*sq1;
++        const float * k_t = k + t*sq2 + iq1*sq1;
++        const float * v_t = v + t*sv2 + h_idx*sv1;
++        const float beta_val = beta[t*sb2 + h_idx*sb1];
++        const float gate_val = expf(g[t*sb2 + h_idx*sb1]);
++
++        if (t >= main_nodes) {
++#pragma unroll
++            for (int r = 0; r < rows_per_lane; ++r) {
++                s_shard[r] = base_shard[r];
++            }
++            const int branch_parent = parent[t];
++            for (int ancestor = 0; ancestor <= branch_parent; ++ancestor) {
++                const float * ancestor_k = k + ancestor*sq2 + iq1*sq1;
++                const float ancestor_gate = expf(g[ancestor*sb2 + h_idx*sb1]);
++#pragma unroll
++                for (int r = 0; r < rows_per_lane; ++r) {
++                    const int row = r*warp_size + lane;
++                    s_shard[r] = ancestor_gate*s_shard[r] + ancestor_k[row]*delta_history[ancestor];
++                }
++            }
++        }
++
++        float k_reg[rows_per_lane];
++        float q_reg[rows_per_lane];
++        float kv_partial = 0.0f;
++#pragma unroll
++        for (int r = 0; r < rows_per_lane; ++r) {
++            const int row = r*warp_size + lane;
++            k_reg[r] = k_t[row];
++            q_reg[r] = q_t[row];
++            kv_partial += s_shard[r]*k_reg[r];
++        }
++        const float kv_col = warp_reduce_sum<warp_size>(kv_partial);
++        const float delta_col = (v_t[col] - gate_val*kv_col)*beta_val;
++        delta_history[t] = delta_col;
++
++        float attn_partial = 0.0f;
++#pragma unroll
++        for (int r = 0; r < rows_per_lane; ++r) {
++            s_shard[r] = gate_val*s_shard[r] + k_reg[r]*delta_col;
++            attn_partial += s_shard[r]*q_reg[r];
+         }
++        const float attn_col = warp_reduce_sum<warp_size>(attn_partial);
++        if (lane == 0) {
++            attn_data[col] = attn_col*scale;
++        }
++        attn_data += S_v*H;
++
++        float * factor = factors + t*factor_size + h_idx*head_factor_size;
++        if (lane == 0) {
++            factor[0] = g[t*sb2 + h_idx*sb1];
++            factor[1 + S_v + col] = delta_col;
++        }
++        if (col == 0) {
++#pragma unroll
++            for (int r = 0; r < rows_per_lane; ++r) {
++                const int row = r*warp_size + lane;
++                factor[1 + row] = k_reg[r];
++            }
++        }
++    }
++}
++
++static void launch_gated_delta_net_tree(
++        const float * q, const float * k, const float * v,
++        const float * g, const float * beta, const float * state,
++        const float * replay_factors, const int32_t * replay_path, const int32_t * parent,
++        float * dst, float * state_out, float * factors,
++        int64_t S_v, int64_t H, int64_t n_tokens,
++        int64_t sq1, int64_t sq2, int64_t sv1, int64_t sv2, int64_t sb1, int64_t sb2,
++        int64_t neqk1, float scale, int n_factors, int main_nodes, cudaStream_t stream) {
++    GGML_ASSERT(n_tokens <= 32 && main_nodes <= n_tokens);
++    const int warp_size = ggml_cuda_info().devices[ggml_cuda_get_device()].warp_size;
++    const int num_warps = 4;
++    const dim3 grid_dims(H, 1, (S_v + num_warps - 1) / num_warps);
++    const dim3 block_dims(warp_size <= S_v ? warp_size : S_v, num_warps, 1);
++    const uint3 neqk1_magic = init_fastdiv_values(neqk1);
++    const ggml_cuda_kernel_launch_params launch_params(grid_dims, block_dims, 0, stream);
++
++    switch (S_v) {
++        case 16: ggml_cuda_kernel_launch(gated_delta_net_tree_cuda<16>, launch_params,
++            q, k, v, g, beta, state, replay_factors, replay_path, parent, dst, state_out, factors,
++            H, n_tokens, sq1, sq2, sv1, sv2, sb1, sb2, neqk1_magic, scale, n_factors, main_nodes); break;
++        case 32: ggml_cuda_kernel_launch(gated_delta_net_tree_cuda<32>, launch_params,
++            q, k, v, g, beta, state, replay_factors, replay_path, parent, dst, state_out, factors,
++            H, n_tokens, sq1, sq2, sv1, sv2, sb1, sb2, neqk1_magic, scale, n_factors, main_nodes); break;
++        case 64: ggml_cuda_kernel_launch(gated_delta_net_tree_cuda<64>, launch_params,
++            q, k, v, g, beta, state, replay_factors, replay_path, parent, dst, state_out, factors,
++            H, n_tokens, sq1, sq2, sv1, sv2, sb1, sb2, neqk1_magic, scale, n_factors, main_nodes); break;
++        case 128: ggml_cuda_kernel_launch(gated_delta_net_tree_cuda<128>, launch_params,
++            q, k, v, g, beta, state, replay_factors, replay_path, parent, dst, state_out, factors,
++            H, n_tokens, sq1, sq2, sv1, sv2, sb1, sb2, neqk1_magic, scale, n_factors, main_nodes); break;
++        default: GGML_ABORT("fatal error");
+     }
+ }
+ 
+-template <bool KDA, bool keep_rs_t>
++template <bool KDA, bool keep_rs_t, bool compact_t = false>
+ static void launch_gated_delta_net(
+         const float * q_d, const float * k_d, const float * v_d,
+         const float * g_d, const float * b_d, const float * s_d,
+-        float * dst_d, float * state_d,
++        const float * replay_factor_d, const int32_t * replay_meta_d,
++        float * dst_d, float * state_d, float * factor_d,
+         int64_t S_v,   int64_t H, int64_t n_tokens, int64_t n_seqs,
+         int64_t sq1,   int64_t sq2, int64_t sq3,
+         int64_t sv1,   int64_t sv2, int64_t sv3,
+         int64_t sb1,   int64_t sb2, int64_t sb3,
+         int64_t neqk1, int64_t rq3,
+-        float scale, int64_t state_slot_stride, int K, cudaStream_t stream) {
++        float scale, int64_t state_slot_stride, int K, int n_factors, cudaStream_t stream) {
+     //TODO: Add chunked kernel for even faster pre-fill
+     const int warp_size = ggml_cuda_info().devices[ggml_cuda_get_device()].warp_size;
+     const int num_warps = 4;
+@@ -189,29 +415,29 @@ static void launch_gated_delta_net(
+     const ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params(grid_dims, block_dims, 0, stream);
+     switch (S_v) {
+         case 16:
+-            ggml_cuda_kernel_launch(gated_delta_net_cuda<16, KDA, keep_rs_t>, launch_params,
+-                q_d, k_d, v_d, g_d, b_d, s_d, dst_d, state_d, H,
++            ggml_cuda_kernel_launch(gated_delta_net_cuda<16, KDA, keep_rs_t, compact_t>, launch_params,
++                q_d, k_d, v_d, g_d, b_d, s_d, replay_factor_d, replay_meta_d, dst_d, state_d, factor_d, H,
+                 n_tokens, n_seqs, sq1, sq2, sq3, sv1, sv2, sv3,
+-                sb1, sb2, sb3, neqk1_magic, rq3_magic, scale, state_slot_stride, K);
++                sb1, sb2, sb3, neqk1_magic, rq3_magic, scale, state_slot_stride, K, n_factors);
+             break;
+         case 32:
+-            ggml_cuda_kernel_launch(gated_delta_net_cuda<32, KDA, keep_rs_t>, launch_params,
+-                q_d, k_d, v_d, g_d, b_d, s_d, dst_d, state_d, H,
++            ggml_cuda_kernel_launch(gated_delta_net_cuda<32, KDA, keep_rs_t, compact_t>, launch_params,
++                q_d, k_d, v_d, g_d, b_d, s_d, replay_factor_d, replay_meta_d, dst_d, state_d, factor_d, H,
+                 n_tokens, n_seqs, sq1, sq2, sq3, sv1, sv2, sv3,
+-                sb1, sb2, sb3, neqk1_magic, rq3_magic, scale, state_slot_stride, K);
++                sb1, sb2, sb3, neqk1_magic, rq3_magic, scale, state_slot_stride, K, n_factors);
+             break;
+         case 64: {
+-            ggml_cuda_kernel_launch(gated_delta_net_cuda<64, KDA, keep_rs_t>, launch_params,
+-                q_d, k_d, v_d, g_d, b_d, s_d, dst_d, state_d, H,
++            ggml_cuda_kernel_launch(gated_delta_net_cuda<64, KDA, keep_rs_t, compact_t>, launch_params,
++                q_d, k_d, v_d, g_d, b_d, s_d, replay_factor_d, replay_meta_d, dst_d, state_d, factor_d, H,
+                 n_tokens, n_seqs, sq1, sq2, sq3, sv1, sv2, sv3,
+-                sb1, sb2, sb3, neqk1_magic, rq3_magic, scale, state_slot_stride, K);
++                sb1, sb2, sb3, neqk1_magic, rq3_magic, scale, state_slot_stride, K, n_factors);
+             break;
+         }
+         case 128: {
+-            ggml_cuda_kernel_launch(gated_delta_net_cuda<128, KDA, keep_rs_t>, launch_params,
+-                q_d, k_d, v_d, g_d, b_d, s_d, dst_d, state_d, H,
++            ggml_cuda_kernel_launch(gated_delta_net_cuda<128, KDA, keep_rs_t, compact_t>, launch_params,
++                q_d, k_d, v_d, g_d, b_d, s_d, replay_factor_d, replay_meta_d, dst_d, state_d, factor_d, H,
+                 n_tokens, n_seqs, sq1, sq2, sq3, sv1, sv2, sv3,
+-                sb1, sb2, sb3, neqk1_magic, rq3_magic, scale, state_slot_stride, K);
++                sb1, sb2, sb3, neqk1_magic, rq3_magic, scale, state_slot_stride, K, n_factors);
+             break;
+         }
+         default:
+@@ -228,6 +454,10 @@ static void ggml_cuda_op_gated_delta_net_impl(
+     ggml_tensor * src_g     = dst->src[3];
+     ggml_tensor * src_beta  = dst->src[4];
+     ggml_tensor * src_state = dst->src[5];
++    ggml_tensor * src_replay_factors = dst->src[6];
++    ggml_tensor * src_replay_meta    = dst->src[7];
++    ggml_tensor * src_tree_parent    = dst->src[8];
++    ggml_tensor * src_tree_replay    = dst->src[9];
+ 
+     GGML_TENSOR_LOCALS(int64_t, neq, src_q, ne);
+     GGML_TENSOR_LOCALS(size_t , nbq, src_q, nb);
+@@ -282,37 +512,61 @@ static void ggml_cuda_op_gated_delta_net_impl(
+ 
+     cudaStream_t stream = ctx.stream();
+ 
+-    // K (snapshot slot count) is an op param; state holds s0 only [S_v, S_v, H, n_seqs].
+-    const int K = ggml_get_op_params_i32(dst, 0);
+-    const bool keep_rs = K > 1;
++    // Positive K is the full-snapshot path.  Negative K is compact scalar-GDN
++    // rollback with -K factor slots and a single final state.
++    const int  K_raw       = ggml_get_op_params_i32(dst, 0);
++    const bool compact     = K_raw < 0;
++    const bool transactional = src_replay_factors != nullptr;
++    const bool tree          = src_tree_parent != nullptr;
++    const int  K           = compact ? 1 : K_raw;
++    const int  n_factors   = compact ? -K_raw : 0;
++    const bool keep_rs     = K > 1;
++    GGML_ASSERT(!compact || !kda);
+ 
+     // recurrent state -> gdn_out tail (after attention scores), or the cache when fusing
+     float * state_d           = dst_d + S_v * H * n_tokens * n_seqs;
+     int64_t state_slot_stride = S_v * S_v * H * n_seqs;
++    float * factor_d          = compact ? state_d + state_slot_stride : nullptr;
++    const float * replay_factor_d = transactional ? (const float *) src_replay_factors->data : nullptr;
++    const int32_t * replay_meta_d = transactional && !tree ? (const int32_t *) src_replay_meta->data : nullptr;
++    GGML_ASSERT(!compact || cache == nullptr);
+     if (cache != nullptr) {
+         state_d           = cache->data;
+         state_slot_stride = cache->slot_stride;
+     }
+ 
+-    if (kda) {
++    if (tree) {
++        GGML_ASSERT(compact && !kda && n_seqs == 1 && src_tree_replay != nullptr);
++        const int main_nodes = ggml_get_op_params_i32(dst, 1);
++        launch_gated_delta_net_tree(q_d, k_d, v_d, g_d, b_d, s_d,
++                replay_factor_d, (const int32_t *) src_tree_replay->data,
++                (const int32_t *) src_tree_parent->data,
++                dst_d, state_d, factor_d,
++                S_v, H, n_tokens, sq1, sq2, sv1, sv2, sb1, sb2,
++                neqk1, scale, n_factors, main_nodes, stream);
++    } else if (kda) {
+         if (keep_rs) {
+-            launch_gated_delta_net<true, true>(q_d, k_d, v_d, g_d, b_d, s_d, dst_d, state_d,
++            launch_gated_delta_net<true, true>(q_d, k_d, v_d, g_d, b_d, s_d, replay_factor_d, replay_meta_d, dst_d, state_d, factor_d,
+                 S_v, H, n_tokens, n_seqs, sq1, sq2, sq3, sv1, sv2, sv3,
+-                sb1, sb2, sb3, neqk1, rq3, scale, state_slot_stride, K, stream);
++                sb1, sb2, sb3, neqk1, rq3, scale, state_slot_stride, K, n_factors, stream);
+         } else {
+-            launch_gated_delta_net<true, false>(q_d, k_d, v_d, g_d, b_d, s_d, dst_d, state_d,
++            launch_gated_delta_net<true, false>(q_d, k_d, v_d, g_d, b_d, s_d, replay_factor_d, replay_meta_d, dst_d, state_d, factor_d,
+                 S_v, H, n_tokens, n_seqs, sq1, sq2, sq3, sv1, sv2, sv3,
+-                sb1, sb2, sb3, neqk1, rq3, scale, state_slot_stride, K, stream);
++                sb1, sb2, sb3, neqk1, rq3, scale, state_slot_stride, K, n_factors, stream);
+         }
+     } else {
+-        if (keep_rs) {
+-            launch_gated_delta_net<false, true>(q_d, k_d, v_d, g_d, b_d, s_d, dst_d, state_d,
++        if (compact) {
++            launch_gated_delta_net<false, false, true>(q_d, k_d, v_d, g_d, b_d, s_d, replay_factor_d, replay_meta_d, dst_d, state_d, factor_d,
++                S_v, H, n_tokens, n_seqs, sq1, sq2, sq3, sv1, sv2, sv3,
++                sb1, sb2, sb3, neqk1, rq3, scale, state_slot_stride, K, n_factors, stream);
++        } else if (keep_rs) {
++            launch_gated_delta_net<false, true>(q_d, k_d, v_d, g_d, b_d, s_d, replay_factor_d, replay_meta_d, dst_d, state_d, factor_d,
+                 S_v, H, n_tokens, n_seqs, sq1, sq2, sq3, sv1, sv2, sv3,
+-                sb1, sb2, sb3, neqk1, rq3, scale, state_slot_stride, K, stream);
++                sb1, sb2, sb3, neqk1, rq3, scale, state_slot_stride, K, n_factors, stream);
+         } else {
+-            launch_gated_delta_net<false, false>(q_d, k_d, v_d, g_d, b_d, s_d, dst_d, state_d,
++            launch_gated_delta_net<false, false>(q_d, k_d, v_d, g_d, b_d, s_d, replay_factor_d, replay_meta_d, dst_d, state_d, factor_d,
+                 S_v, H, n_tokens, n_seqs, sq1, sq2, sq3, sv1, sv2, sv3,
+-                sb1, sb2, sb3, neqk1, rq3, scale, state_slot_stride, K, stream);
++                sb1, sb2, sb3, neqk1, rq3, scale, state_slot_stride, K, n_factors, stream);
+         }
+     }
+ }
+diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
+index b4c1281..352c3ba 100644
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -2476,11 +2476,44 @@ static bool ggml_backend_cuda_cpy_tensor_async(ggml_backend_t backend_src, ggml_
+     ggml_backend_buffer_t buf_src = src->view_src ? src->view_src->buffer : src->buffer;
+     ggml_backend_buffer_t buf_dst = dst->view_src ? dst->view_src->buffer : dst->buffer;
+ 
+-    if (!ggml_backend_is_cuda(backend_src) || !ggml_backend_is_cuda(backend_dst)) {
++    if (!ggml_backend_is_cuda(backend_dst)) {
+         return false;
+     }
+ 
+-    if (!ggml_backend_buffer_is_cuda(buf_src) || !ggml_backend_buffer_is_cuda(buf_dst)) {
++    if (!ggml_backend_buffer_is_cuda(buf_dst)) {
++        return false;
++    }
++
++    // Transient op offload stages immutable CPU-resident weights immediately
++    // before the CUDA split that consumes them.  These weights live in a CUDA
++    // pinned host buffer, but the generic backend path currently falls back to
++    // ggml_backend_tensor_copy(), which synchronizes a separate per-thread
++    // stream after every H2D transfer.  Queue the copy on the destination
++    // compute stream instead.  Stream ordering keeps the following graph split
++    // correct while avoiding a host-side synchronization per weight tensor.
++    // Keep this experimental until it has been benchmarked across backends.
++    static const bool async_host_weights = [] {
++        const char * value = getenv("GGML_CUDA_ASYNC_HOST_WEIGHTS");
++        return value != nullptr && strcmp(value, "0") != 0;
++    }();
++
++    if (async_host_weights &&
++        ggml_backend_buft_is_cuda_host(buf_src->buft) &&
++        ggml_backend_buffer_get_usage(buf_src) == GGML_BACKEND_BUFFER_USAGE_WEIGHTS) {
++        ggml_backend_cuda_context * cuda_ctx_dst = (ggml_backend_cuda_context *) backend_dst->context;
++        ggml_backend_cuda_buffer_context * buf_ctx_dst = (ggml_backend_cuda_buffer_context *) buf_dst->context;
++
++        if (cuda_ctx_dst->device != buf_ctx_dst->device) {
++            return false;
++        }
++
++        ggml_cuda_set_device(cuda_ctx_dst->device);
++        CUDA_CHECK(cudaMemcpyAsync(dst->data, src->data, ggml_nbytes(dst),
++                                   cudaMemcpyHostToDevice, cuda_ctx_dst->stream()));
++        return true;
++    }
++
++    if (!ggml_backend_is_cuda(backend_src) || !ggml_backend_buffer_is_cuda(buf_src)) {
+         return false;
+     }
+ 
+@@ -2757,6 +2790,9 @@ static int ggml_cuda_try_gdn_cache_fusion(
+     const int64_t       n_seqs    = src_v->ne[3];
+     const int64_t       D         = S_v * S_v * H;
+     const int64_t       K         = ggml_get_op_params_i32(gdn, 0); // snapshot slot count
++    if (K <= 0) {
++        return 0; // compact factors have a different tail layout
++    }
+     const int64_t       n_written = std::min<int64_t>(n_tokens, K); // newest n_written slots are written
+ 
+     // snapshot tail starts right after the attention scores
+@@ -5220,7 +5256,7 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
+         }
+         case GGML_OP_SSM_CONV: {
+             // assumes d_inner % threads == 0
+-            return op->src[0]->ne[1] % 128 == 0;
++            return op->src[2] != nullptr ? op->src[0]->ne[0] % 128 == 0 : op->src[0]->ne[1] % 128 == 0;
+         }
+         case GGML_OP_CONT:
+             return true;
+diff --git a/ggml/src/ggml-cuda/ssm-conv.cu b/ggml/src/ggml-cuda/ssm-conv.cu
+index 1463169..96d1578 100644
+--- a/ggml/src/ggml-cuda/ssm-conv.cu
++++ b/ggml/src/ggml-cuda/ssm-conv.cu
+@@ -57,6 +57,64 @@ static __global__ void ssm_conv_f32(const float * src0_ptr, const float * src1_p
+     }
+ }
+ 
++__global__ void ssm_conv_tree_f32(
++        const float * x,
++        const float * weights,
++        const float * state,
++        const float * replay_factors,
++        const int32_t * parent,
++        const int32_t * replay_path,
++        float * dst,
++        int64_t channels,
++        int64_t nodes,
++        int factor_slots) {
++    const int64_t channel = (int64_t) blockIdx.x*blockDim.x + threadIdx.x;
++    if (channel >= channels) {
++        return;
++    }
++
++    float base[3] = {
++        state[channel*3 + 0],
++        state[channel*3 + 1],
++        state[channel*3 + 2],
++    };
++    for (int i = 0; i < replay_path[0]; ++i) {
++        const int node = replay_path[i + 1];
++        base[0] = base[1];
++        base[1] = base[2];
++        base[2] = replay_factors[(int64_t) node*channels + channel];
++    }
++
++    float * state_out = dst + channels*nodes;
++    state_out[channel*3 + 0] = base[0];
++    state_out[channel*3 + 1] = base[1];
++    state_out[channel*3 + 2] = base[2];
++
++    float * factor_out = state_out + 3*channels;
++    const float * w = weights + channel*4;
++    for (int node = 0; node < nodes; ++node) {
++        int ancestors[3];
++        int count = 0;
++        for (int current = parent[node]; current >= 0 && count < 3; current = parent[current]) {
++            ancestors[count++] = current;
++        }
++
++        float window[3] = {base[0], base[1], base[2]};
++        for (int i = count - 1; i >= 0; --i) {
++            window[0] = window[1];
++            window[1] = window[2];
++            window[2] = x[(int64_t) ancestors[i]*channels + channel];
++        }
++
++        const float current = x[(int64_t) node*channels + channel];
++        dst[(int64_t) node*channels + channel] =
++                window[0]*w[0] + window[1]*w[1] + window[2]*w[2] + current*w[3];
++        factor_out[(int64_t) node*channels + channel] = current;
++    }
++
++    GGML_UNUSED(factor_slots);
++}
++
+ template <bool apply_silu, size_t split_d_inner, size_t d_conv, int64_t split_n_t>
+ static __global__ void ssm_conv_long_token_f32(const float * __restrict__ src0, const float * __restrict__ src1,
+                                                const float * __restrict__ bias,
+@@ -160,6 +218,24 @@ static void ssm_conv_f32_cuda(const float * src0, const float * src1, const floa
+ void ggml_cuda_op_ssm_conv(ggml_backend_cuda_context & ctx, ggml_tensor * dst, ggml_tensor * bias_add_node, ggml_tensor * silu_dst) {
+     const struct ggml_tensor * src0 = dst->src[0];  // conv_x
+     const struct ggml_tensor * src1 = dst->src[1];  // conv1d.weight
++    if (dst->src[2] != nullptr) {
++        GGML_ASSERT(bias_add_node == nullptr && silu_dst == nullptr);
++        const int64_t channels = src0->ne[0];
++        const int64_t nodes = src0->ne[1];
++        const int factor_slots = ggml_get_op_params_i32(dst, 0);
++        const int threads = 256;
++        const int blocks = (channels + threads - 1)/threads;
++        const ggml_cuda_kernel_launch_params launch_params(blocks, threads, 0, ctx.stream());
++        ggml_cuda_kernel_launch(ssm_conv_tree_f32, launch_params,
++                (const float *) src0->data,
++                (const float *) src1->data,
++                (const float *) dst->src[2]->data,
++                (const float *) dst->src[3]->data,
++                (const int32_t *) dst->src[4]->data,
++                (const int32_t *) dst->src[5]->data,
++                (float *) dst->data, channels, nodes, factor_slots);
++        return;
++    }
+     const bool fuse_bias = bias_add_node != nullptr;
+     const bool fuse_silu = silu_dst != nullptr;
+ 
+diff --git a/ggml/src/ggml-vulkan/ggml-vulkan.cpp b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+index c1d86aa..9617907 100644
+--- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
++++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+@@ -19544,6 +19544,7 @@ static void ggml_vk_check_results_0(ggml_backend_vk_context * ctx, ggml_cgraph *
+         } else if (tensor->op == GGML_OP_GATED_DELTA_NET) {
+             tensor_clone = ggml_gated_delta_net(ggml_ctx, src_clone[0], src_clone[1],
+             src_clone[2], src_clone[3], src_clone[4], src_clone[5],
++            src_clone[6], src_clone[7],
+             ggml_get_op_params_i32(tensor, 0));
+         } else if (tensor->op == GGML_OP_OPT_STEP_ADAMW) {
+             src_clone[0]->flags = tensor->src[0]->flags;
+diff --git a/ggml/src/ggml.c b/ggml/src/ggml.c
+index 1a60fec..43cf851 100644
+--- a/ggml/src/ggml.c
++++ b/ggml/src/ggml.c
+@@ -5594,6 +5594,38 @@ struct ggml_tensor * ggml_ssm_conv(
+     return result;
+ }
+ 
++struct ggml_tensor * ggml_ssm_conv_tree(
++        struct ggml_context * ctx,
++        struct ggml_tensor  * x,
++        struct ggml_tensor  * c,
++        struct ggml_tensor  * state,
++        struct ggml_tensor  * replay_factors,
++        struct ggml_tensor  * tree_parent,
++        struct ggml_tensor  * replay_path,
++        int64_t               factor_slots) {
++    GGML_ASSERT(ggml_is_3d(x) && ggml_is_matrix(c));
++    GGML_ASSERT(c->ne[0] == 4 && x->ne[0] == c->ne[1]);
++    GGML_ASSERT(x->ne[2] == 1 && x->ne[1] <= factor_slots);
++    GGML_ASSERT(state->type == GGML_TYPE_F32 && ggml_is_contiguous(state));
++    GGML_ASSERT(replay_factors->type == GGML_TYPE_F32 && ggml_is_contiguous(replay_factors));
++    GGML_ASSERT(tree_parent->type == GGML_TYPE_I32 && ggml_is_contiguous(tree_parent));
++    GGML_ASSERT(replay_path->type == GGML_TYPE_I32 && ggml_is_contiguous(replay_path));
++
++    const int64_t channels = x->ne[0];
++    const int64_t nodes = x->ne[1];
++    struct ggml_tensor * result = ggml_new_tensor_1d(ctx, GGML_TYPE_F32,
++            channels*nodes + 3*channels + factor_slots*channels);
++    ggml_set_op_params_i32(result, 0, (int32_t) factor_slots);
++    result->op = GGML_OP_SSM_CONV;
++    result->src[0] = x;
++    result->src[1] = c;
++    result->src[2] = state;
++    result->src[3] = replay_factors;
++    result->src[4] = tree_parent;
++    result->src[5] = replay_path;
++    return result;
++}
++
+ // ggml_ssm_scan
+ 
+ struct ggml_tensor * ggml_ssm_scan(
+@@ -6283,6 +6315,8 @@ struct ggml_tensor * ggml_gated_delta_net(
+         struct ggml_tensor  * g,
+         struct ggml_tensor  * beta,
+         struct ggml_tensor  * state,
++        struct ggml_tensor  * replay_factors,
++        struct ggml_tensor  * replay_meta,
+         int64_t               K) {
+     GGML_ASSERT(ggml_is_contiguous_rows(q));
+     GGML_ASSERT(ggml_is_contiguous_rows(k));
+@@ -6297,6 +6331,13 @@ struct ggml_tensor * ggml_gated_delta_net(
+     GGML_ASSERT(g->type == GGML_TYPE_F32);
+     GGML_ASSERT(beta->type == GGML_TYPE_F32);
+     GGML_ASSERT(state->type == GGML_TYPE_F32);
++    GGML_ASSERT((replay_factors == NULL) == (replay_meta == NULL));
++    if (replay_factors != NULL) {
++        GGML_ASSERT(replay_factors->type == GGML_TYPE_F32);
++        GGML_ASSERT(replay_meta->type == GGML_TYPE_I32);
++        GGML_ASSERT(ggml_is_contiguous(replay_factors));
++        GGML_ASSERT(ggml_is_contiguous(replay_meta));
++    }
+ 
+     const int64_t S_v      = v->ne[0];
+     const int64_t H        = v->ne[1];
+@@ -6312,10 +6353,25 @@ struct ggml_tensor * ggml_gated_delta_net(
+     GGML_ASSERT(state->ne[1] == S_v);
+     GGML_ASSERT(state->ne[2] == H);
+     GGML_ASSERT(state->ne[3] == n_seqs);
+-    GGML_ASSERT(K >= 1);
+-    const int64_t state_rows = K * S_v * n_seqs;
+-    const int64_t ne[4] = { S_v * H, n_tokens * n_seqs + state_rows, 1, 1 };
+-    struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F32, 4, ne);
++    GGML_ASSERT(K != 0);
++
++    struct ggml_tensor * result;
++    if (K > 0) {
++        const int64_t state_rows = K * S_v * n_seqs;
++        const int64_t ne[4] = { S_v * H, n_tokens * n_seqs + state_rows, 1, 1 };
++        result = ggml_new_tensor(ctx, GGML_TYPE_F32, 4, ne);
++    } else {
++        // Compact scalar-GDN layout: attention, one state tail, then -K factor
++        // records. Transactional replay emits the accepted state before the
++        // current batch; inverse compact mode emits the current final state.
++        GGML_ASSERT(g->ne[0] == 1);
++        const int64_t n_factors   = -K;
++        const int64_t attn_elems  = S_v * H * n_tokens * n_seqs;
++        const int64_t state_elems = S_v * S_v * H * n_seqs;
++        const int64_t factor_size = (1 + 2*S_v) * H;
++        result = ggml_new_tensor_1d(ctx, GGML_TYPE_F32,
++                attn_elems + state_elems + n_factors*factor_size*n_seqs);
++    }
+ 
+     ggml_set_op_params_i32(result, 0, (int32_t) K);
+ 
+@@ -6326,10 +6382,41 @@ struct ggml_tensor * ggml_gated_delta_net(
+     result->src[3] = g;
+     result->src[4] = beta;
+     result->src[5] = state;
++    result->src[6] = replay_factors;
++    result->src[7] = replay_meta;
+ 
+     return result;
+ }
+ 
++struct ggml_tensor * ggml_gated_delta_net_tree(
++        struct ggml_context * ctx,
++        struct ggml_tensor  * q,
++        struct ggml_tensor  * k,
++        struct ggml_tensor  * v,
++        struct ggml_tensor  * g,
++        struct ggml_tensor  * beta,
++        struct ggml_tensor  * state,
++        struct ggml_tensor  * replay_factors,
++        struct ggml_tensor  * tree_parent,
++        struct ggml_tensor  * replay_path,
++        int64_t               factor_slots,
++        int64_t               main_nodes) {
++    GGML_ASSERT(factor_slots > 0 && v->ne[2] <= factor_slots);
++    GGML_ASSERT(main_nodes > 0 && main_nodes <= v->ne[2]);
++    GGML_ASSERT(tree_parent->type == GGML_TYPE_I32 && ggml_is_contiguous(tree_parent));
++    GGML_ASSERT(replay_path->type == GGML_TYPE_I32 && ggml_is_contiguous(replay_path));
++    GGML_ASSERT(tree_parent->ne[0] == v->ne[2]);
++    GGML_ASSERT(replay_factors->type == GGML_TYPE_F32 && ggml_is_contiguous(replay_factors));
++
++    struct ggml_tensor * result = ggml_gated_delta_net(
++            ctx, q, k, v, g, beta, state, NULL, NULL, -factor_slots);
++    ggml_set_op_params_i32(result, 1, (int32_t) main_nodes);
++    result->src[6] = replay_factors;
++    result->src[8] = tree_parent;
++    result->src[9] = replay_path;
++    return result;
++}
++
+ // ggml_lightning_indexer
+ 
+ struct ggml_tensor * ggml_lightning_indexer(
+diff --git a/src/llama-batch.cpp b/src/llama-batch.cpp
+index 2b98a55..9e41d9f 100644
+--- a/src/llama-batch.cpp
++++ b/src/llama-batch.cpp
+@@ -211,6 +211,7 @@ bool llama_batch_allocr::init(
+ 
+         llama_ubatch ubatch {
+             /*.b_equal_seqs =*/ false,
++            /*.b_tree       =*/ false,
+             /*.n_tokens     =*/ (uint32_t) batch.n_tokens,
+             /*.n_seq_tokens =*/ (uint32_t) 1,
+             /*.n_seqs       =*/ (uint32_t) batch.n_tokens,
+@@ -224,6 +225,8 @@ bool llama_batch_allocr::init(
+             /*.seq_id_unq   =*/ this->seq_id_unq.data(),
+             /*.seq_idx      =*/ this->seq_idx.data(),
+             /*.output       =*/ batch.logits,
++            /*.tree_parent  =*/ nullptr,
++            /*.tree_main_nodes =*/ 0,
+             /*.data         =*/ {},
+         };
+ 
+@@ -416,6 +419,7 @@ llama_ubatch llama_batch_allocr::ubatch_reserve(uint32_t n_seq_tokens, uint32_t
+ 
+     llama_ubatch res {
+         /*.b_equal_seqs =*/ true,
++        /*.b_tree       =*/ false,
+         /*.n_tokens     =*/ n_tokens,
+         /*.n_seq_tokens =*/ n_seq_tokens,
+         /*.n_seqs       =*/ n_seqs,
+@@ -430,6 +434,8 @@ llama_ubatch llama_batch_allocr::ubatch_reserve(uint32_t n_seq_tokens, uint32_t
+         /*.seq_id_unq   =*/ udata->seq_id_unq.data(),
+         /*.seq_idx      =*/ udata->seq_idx.data(),
+         /*.output       =*/ udata->output.data(),
++        /*.tree_parent  =*/ nullptr,
++        /*.tree_main_nodes =*/ 0,
+         /*.data         =*/ std::move(udata),
+     };
+ 
+@@ -678,6 +684,52 @@ llama_ubatch llama_batch_allocr::split_equal(uint32_t n_ubatch, bool sequential,
+     return ubatch_add(idxs, n_seqs, true);
+ }
+ 
++llama_ubatch llama_batch_allocr::split_tree(uint32_t n_ubatch) {
++    std::vector<int32_t> idxs;
++    for (uint32_t i = 0; i < used.size() && idxs.size() < n_ubatch; ++i) {
++        if (!used[i]) {
++            idxs.push_back(i);
++        }
++    }
++
++    if (idxs.empty()) {
++        return {};
++    }
++
++    for (const int32_t idx : idxs) {
++        GGML_ASSERT(!used[idx]);
++        used[idx] = true;
++        ++n_used;
++    }
++
++    llama_ubatch result = ubatch_add(idxs, 1, true);
++    result.b_tree = true;
++    result.data->tree_parent.assign(idxs.size(), -1);
++
++    for (size_t i = 1; i < idxs.size(); ++i) {
++        const int32_t child = idxs[i];
++        for (size_t j = i; j-- > 0;) {
++            const int32_t candidate = idxs[j];
++            if (batch.pos[candidate] + 1 == batch.pos[child] &&
++                    (seq_set[candidate] & seq_set[child]).any()) {
++                result.data->tree_parent[i] = (int32_t) j;
++                break;
++            }
++        }
++        GGML_ASSERT(result.data->tree_parent[i] >= 0 && "verification tree must be prefix-closed");
++    }
++
++    uint32_t main_nodes = 0;
++    while (main_nodes < idxs.size() && seq_set[idxs[main_nodes]].test(0)) {
++        ++main_nodes;
++    }
++    GGML_ASSERT(main_nodes > 0);
++
++    result.tree_parent = result.data->tree_parent.data();
++    result.tree_main_nodes = main_nodes;
++    return result;
++}
++
+ llama_ubatch llama_batch_allocr::split_seq(uint32_t n_ubatch) {
+     // find the first unused token
+     uint32_t cur_idx = 0;
+@@ -817,6 +869,7 @@ llama_ubatch llama_batch_allocr::ubatch_add(const std::vector<int32_t> & idxs, u
+ 
+     llama_ubatch res {
+         /*.b_equal_seqs =*/ equal_seqs,
++        /*.b_tree       =*/ false,
+         /*.n_tokens     =*/ n_tokens,
+         /*.n_seq_tokens =*/ n_tokens/n_seqs,
+         /*.n_seqs       =*/ n_seqs,
+@@ -831,6 +884,8 @@ llama_ubatch llama_batch_allocr::ubatch_add(const std::vector<int32_t> & idxs, u
+         /*.seq_id_unq   =*/ udata->seq_id_unq.data(),
+         /*.seq_idx      =*/ udata->seq_idx.data(),
+         /*.output       =*/ udata->output.data(),
++        /*.tree_parent  =*/ nullptr,
++        /*.tree_main_nodes =*/ 0,
+         /*.data         =*/ std::move(udata),
+     };
+ 
+@@ -846,6 +901,7 @@ llama_ubatch llama_batch_allocr::ubatch_add(const std::vector<int32_t> & idxs, u
+ void llama_batch_allocr::ubatch_print(const llama_ubatch & ubatch, int debug) {
+     if (debug > 0) {
+         LLAMA_LOG_DEBUG("%s:   equal_seqs   = %d\n", __func__, ubatch.equal_seqs());
++        LLAMA_LOG_DEBUG("%s:   tree         = %d\n", __func__, ubatch.tree());
+         LLAMA_LOG_DEBUG("%s:   n_tokens     = %d\n", __func__, ubatch.n_tokens);
+         LLAMA_LOG_DEBUG("%s:   n_seq_tokens = %d\n", __func__, ubatch.n_seq_tokens);
+         LLAMA_LOG_DEBUG("%s:   n_seqs       = %d\n", __func__, ubatch.n_seqs);
+diff --git a/src/llama-batch.h b/src/llama-batch.h
+index a3d1889..c6211a0 100644
+--- a/src/llama-batch.h
++++ b/src/llama-batch.h
+@@ -17,6 +17,10 @@ struct llama_ubatch {
+         return b_equal_seqs != 0;
+     }
+ 
++    bool tree() const {
++        return b_tree != 0;
++    }
++
+     // typical for M-RoPE cases:
+     //   0 - sequential position of the tokens/embeddings in the sequence
+     //   1 - y position in the image
+@@ -29,6 +33,7 @@ struct llama_ubatch {
+ 
+     uint32_t b_equal_seqs; // note: this is a boolean, but we use an int32_t for alignment
+                            //       otherwise address sanitizer complains
++    uint32_t b_tree;
+     // TODO: whole_seqs for embeddings?
+ 
+     uint32_t n_tokens;     // total tokens (n_seq_tokens * n_seqs)
+@@ -50,6 +55,8 @@ struct llama_ubatch {
+     llama_seq_id *  seq_id_unq; // [n_seqs_unq]       | s   | seq_id
+     int32_t      *  seq_idx;    // [LLAMA_MAX_SEQ]    | -   | seq_idx
+     int8_t       *  output;     // [n_tokens]         | i   | -
++    int32_t      *  tree_parent; // [n_tokens], root = -1
++    uint32_t        tree_main_nodes;
+ 
+     struct data_t {
+         std::vector<llama_token>    token;
+@@ -60,6 +67,7 @@ struct llama_ubatch {
+         std::vector<llama_seq_id>   seq_id_unq;
+         std::vector<int32_t>        seq_idx;
+         std::vector<int8_t>         output;
++        std::vector<int32_t>        tree_parent;
+ 
+         std::vector<llama_seq_id> seq_id_data;
+     };
+@@ -107,6 +115,9 @@ public:
+     // n_keep_tail = minimum trailing tokens of a seq that must land in the same ubatch
+     llama_ubatch split_equal(uint32_t n_ubatch, bool sequential, uint32_t n_keep_tail);
+ 
++    // keep one prefix-closed verification tree in a single logical sequence
++    llama_ubatch split_tree(uint32_t n_ubatch);
++
+     // sequence-set-wise split - each ubatch contains a single sequence-set
+     llama_ubatch split_seq(uint32_t n_ubatch);
+ 
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 0402044..c3622a3 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -1357,6 +1357,11 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
+ 
+         gf = model.build_graph(gparams);
+ 
++        if (ubatch.tree()) {
++            LLAMA_LOG_DEBUG("%s: packed tree graph built, nodes=%d tokens=%u\n",
++                    __func__, gf ? ggml_graph_n_nodes(gf) : -1, ubatch.n_tokens);
++        }
++
+         //LLAMA_LOG_INFO("graph build time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
+ 
+         if (!gf) {
+@@ -1365,11 +1370,21 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
+             return nullptr;
+         }
+ 
++        if (ubatch.tree()) {
++            LLAMA_LOG_DEBUG("%s: allocating packed tree graph\n", __func__);
++        }
+         if (!ggml_backend_sched_alloc_graph(sched.get(), gf)) {
+             LLAMA_LOG_ERROR("%s: failed to allocate graph\n", __func__);
+             ret = GGML_STATUS_ALLOC_FAILED;
+             return nullptr;
+         }
++        if (ubatch.tree()) {
++            for (size_t i = 0; i < backend_ptrs.size(); ++i) {
++                LLAMA_LOG_DEBUG("%s: packed tree buffer %s = %.2f MiB\n", __func__,
++                        ggml_backend_name(backend_ptrs[i]),
++                        ggml_backend_sched_get_buffer_size(sched.get(), backend_ptrs[i]) / 1048576.0);
++            }
++        }
+     }
+ 
+     // set the input data for the input tensors
+@@ -1379,9 +1394,16 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
+         // FIXME this call causes a crash if any model inputs were not used in the graph and were therefore not allocated
+         res->set_inputs(&ubatch);
+ 
++        if (ubatch.tree()) {
++            LLAMA_LOG_DEBUG("%s: packed tree inputs set\n", __func__);
++        }
++
+         //LLAMA_LOG_INFO("graph set inputs time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
+     }
+ 
++    if (ubatch.tree()) {
++        LLAMA_LOG_DEBUG("%s: computing packed tree graph\n", __func__);
++    }
+     const auto status = graph_compute(res->get_gf(), ubatch.n_tokens > 1);
+     if (status != GGML_STATUS_SUCCESS) {
+         LLAMA_LOG_ERROR("%s: failed to compute graph, compute status: %d\n", __func__, status);
+@@ -1659,6 +1681,15 @@ int llama_context::decode(const llama_batch & batch_inp) {
+     const bool has_samplers = !sampling.samplers.empty();
+ 
+     const uint32_t n_seq_max = cparams.kv_unified ? LLAMA_MAX_SEQ : cparams.n_seq_max;
++    bool input_tree = false;
++    if (batch_inp.n_seq_id) {
++        for (int32_t i = 0; i < batch_inp.n_tokens; ++i) {
++            input_tree |= batch_inp.n_seq_id[i] > 1;
++        }
++    }
++    if (input_tree) {
++        LLAMA_LOG_DEBUG("%s: packed tree decode begin, tokens=%d\n", __func__, batch_inp.n_tokens);
++    }
+ 
+     // embedding contexts output every token even when batch.logits is not set
+     if (has_samplers && (output_all || batch_inp.logits)) {
+@@ -1695,6 +1726,9 @@ int llama_context::decode(const llama_batch & batch_inp) {
+         LLAMA_LOG_ERROR("%s: failed to initialize batch\n", __func__);
+         return -1;
+     }
++    if (input_tree) {
++        LLAMA_LOG_DEBUG("%s: packed tree batch validated\n", __func__);
++    }
+ 
+     const uint32_t n_tokens_all  = balloc->get_n_tokens();
+     const uint32_t n_outputs_all = balloc->get_n_outputs();
+@@ -1727,16 +1761,28 @@ int llama_context::decode(const llama_batch & batch_inp) {
+     output_swaps.clear();
+ 
+     sched_reserve();
++    if (input_tree) {
++        LLAMA_LOG_DEBUG("%s: packed tree scheduler reserved\n", __func__);
++    }
+ 
+     bool did_optimize = false;
+ 
+     // handle any pending shifts/copies
+     memory_update(false);
++    if (input_tree) {
++        LLAMA_LOG_DEBUG("%s: packed tree pending memory updates applied\n", __func__);
++    }
+ 
+     llama_memory_context_ptr mctx;
+ 
+     while (true) {
++        if (input_tree) {
++            LLAMA_LOG_DEBUG("%s: preparing packed tree memory context\n", __func__);
++        }
+         mctx = memory->init_batch(*balloc, cparams.n_ubatch, output_all);
++        if (input_tree) {
++            LLAMA_LOG_DEBUG("%s: packed tree memory context prepared\n", __func__);
++        }
+         if (!mctx) {
+             return -2;
+         }
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index 8fca8e1..74639b5 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -327,17 +327,84 @@ void llm_graph_input_cls::set_input(const llama_ubatch * ubatch) {
+ }
+ 
+ void llm_graph_input_rs::set_input(const llama_ubatch * ubatch) {
+-    GGML_UNUSED(ubatch);
++    set_input(ubatch, mctx);
++}
++
++void llm_graph_input_rs::set_input(
++        const llama_ubatch * ubatch,
++        const llama_memory_recurrent_context * mctx_cur) {
++    const int64_t n_rs = mctx_cur->get_n_rs();
++
++    if (tree_parent) {
++        GGML_ASSERT(ubatch->tree());
++        if (tree_parent->buffer == nullptr) LLAMA_LOG_ERROR("%s: tree_parent input was not allocated\n", __func__);
++        GGML_ASSERT(ggml_backend_buffer_is_host(tree_parent->buffer));
++        ggml_backend_tensor_set(tree_parent, ubatch->tree_parent, 0, ggml_nbytes(tree_parent));
++    }
++
++    if (tree_replay) {
++        if (tree_replay->buffer == nullptr) LLAMA_LOG_ERROR("%s: tree_replay input was not allocated\n", __func__);
++        GGML_ASSERT(ggml_backend_buffer_is_host(tree_replay->buffer));
++        int32_t * data = (int32_t *) tree_replay->data;
++        const uint32_t stride = tree_replay->ne[0];
++        for (uint32_t seq = 0; seq < (uint32_t) tree_replay->ne[1]; ++seq) {
++            mctx_cur->replay_path(seq, data + seq*stride, stride);
++        }
++    }
++
++    if (s_copy_current) {
++        if (s_copy_current->buffer == nullptr) LLAMA_LOG_ERROR("%s: s_copy_current input was not allocated\n", __func__);
++        GGML_ASSERT(ggml_backend_buffer_is_host(s_copy_current->buffer));
++        int32_t * data = (int32_t *) s_copy_current->data;
++        for (uint32_t i = 0; i < n_rs; ++i) {
++            data[i] = mctx_cur->s_copy_current(i);
++        }
++    }
++
++    if (s_copy_transaction) {
++        if (s_copy_transaction->buffer == nullptr) LLAMA_LOG_ERROR("%s: s_copy_transaction input was not allocated\n", __func__);
++        GGML_ASSERT(ggml_backend_buffer_is_host(s_copy_transaction->buffer));
++        int32_t * data = (int32_t *) s_copy_transaction->data;
++        for (uint32_t i = 0; i < n_rs; ++i) {
++            data[i] = mctx_cur->s_copy_transactional(i);
++        }
++    }
+ 
+-    const int64_t n_rs = mctx->get_n_rs();
++    if (replay_meta) {
++        if (replay_meta->buffer == nullptr) LLAMA_LOG_ERROR("%s: replay_meta input was not allocated\n", __func__);
++        GGML_ASSERT(ggml_backend_buffer_is_host(replay_meta->buffer));
++        int32_t * data = (int32_t *) replay_meta->data;
++        const uint32_t n_seqs = replay_meta->ne[1];
++        for (uint32_t seq = 0; seq < n_seqs; ++seq) {
++            mctx_cur->replay_meta(seq, data[2*seq], data[2*seq + 1]);
++        }
++    }
++
++    if (rollback_mask) {
++        if (rollback_mask->buffer == nullptr) LLAMA_LOG_ERROR("%s: rollback_mask input was not allocated\n", __func__);
++        GGML_ASSERT(ggml_backend_buffer_is_host(rollback_mask->buffer));
++        float * data = (float *) rollback_mask->data;
++        const uint32_t n_slots = mctx_cur->get_n_rs_seq();
++        const uint32_t n_seqs  = rollback_mask->ne[1];
++        for (uint32_t seq = 0; seq < n_seqs; ++seq) {
++            const uint32_t rollback = mctx_cur->rollback_idx(seq);
++            for (uint32_t slot = 0; slot < n_slots; ++slot) {
++                data[slot + n_slots*seq] = rollback > slot ? 1.0f : 0.0f;
++            }
++        }
++    }
+ 
+     if (s_copy) {
++        if (s_copy->buffer == nullptr && ubatch->tree()) {
++            return;
++        }
++        if (s_copy->buffer == nullptr) LLAMA_LOG_ERROR("%s: s_copy input was not allocated\n", __func__);
+         GGML_ASSERT(ggml_backend_buffer_is_host(s_copy->buffer));
+         int32_t * data = (int32_t *) s_copy->data;
+ 
+         // assuming copy destinations ALWAYS happen ONLY on the cells between head and head+n
+         for (uint32_t i = 0; i < n_rs; ++i) {
+-            data[i] = mctx->s_copy(i);
++            data[i] = mctx_cur->s_copy(i);
+         }
+     }
+ }
+@@ -354,8 +421,22 @@ bool llm_graph_input_rs::can_reuse(const llm_graph_params & params) {
+     res &= s_copy_main->ne[0]  == params.ubatch.n_seqs;
+     res &= s_copy_extra->ne[0] == mctx->get_n_rs() - params.ubatch.n_seqs;
+ 
++    if (s_copy_current) {
++        res &= s_copy_current_main->ne[0]  == params.ubatch.n_seqs;
++        res &= s_copy_current_extra->ne[0] == mctx->get_n_rs() - params.ubatch.n_seqs;
++    }
++
++    if (s_copy_transaction) {
++        res &= s_copy_transaction_main->ne[0]  == params.ubatch.n_seqs;
++        res &= s_copy_transaction_extra->ne[0] == mctx->get_n_rs() - params.ubatch.n_seqs;
++    }
++
+     res &= head == mctx->get_head();
+     res &= rs_z == mctx->get_rs_z();
++    res &= (tree_parent != nullptr) == params.ubatch.tree();
++    if (tree_parent) {
++        res &= tree_parent->ne[0] == params.ubatch.n_tokens;
++    }
+ 
+     return res;
+ }
+@@ -1097,17 +1178,7 @@ void llm_graph_input_mem_hybrid::set_input(const llama_ubatch * ubatch) {
+         mctx->get_attn()->set_input_v_rot(inp_attn->self_v_rot);
+     }
+ 
+-    const int64_t n_rs = mctx->get_recr()->get_n_rs();
+-
+-    if (inp_rs->s_copy) {
+-        GGML_ASSERT(ggml_backend_buffer_is_host(inp_rs->s_copy->buffer));
+-        int32_t * data = (int32_t *) inp_rs->s_copy->data;
+-
+-        // assuming copy destinations ALWAYS happen ONLY on the cells between head and head+n
+-        for (uint32_t i = 0; i < n_rs; ++i) {
+-            data[i] = mctx->get_recr()->s_copy(i);
+-        }
+-    }
++    inp_rs->set_input(ubatch, mctx->get_recr());
+ }
+ 
+ bool llm_graph_input_mem_hybrid::can_reuse(const llm_graph_params & params) {
+@@ -1126,6 +1197,14 @@ bool llm_graph_input_mem_hybrid::can_reuse(const llm_graph_params & params) {
+ 
+     res &= inp_rs->s_copy_main->ne[0]  == params.ubatch.n_seqs;
+     res &= inp_rs->s_copy_extra->ne[0] == mctx->get_recr()->get_n_rs() - params.ubatch.n_seqs;
++    if (inp_rs->s_copy_current) {
++        res &= inp_rs->s_copy_current_main->ne[0]  == params.ubatch.n_seqs;
++        res &= inp_rs->s_copy_current_extra->ne[0] == mctx->get_recr()->get_n_rs() - params.ubatch.n_seqs;
++    }
++    if (inp_rs->s_copy_transaction) {
++        res &= inp_rs->s_copy_transaction_main->ne[0]  == params.ubatch.n_seqs;
++        res &= inp_rs->s_copy_transaction_extra->ne[0] == mctx->get_recr()->get_n_rs() - params.ubatch.n_seqs;
++    }
+ 
+     res &= inp_rs->head == mctx->get_recr()->get_head();
+     res &= inp_rs->rs_z == mctx->get_recr()->get_rs_z();
+@@ -1141,17 +1220,7 @@ void llm_graph_input_mem_hybrid_k::set_input(const llama_ubatch * ubatch) {
+ 
+     mctx->get_attn()->set_input_kq_mask(inp_attn->self_kq_mask, ubatch, cparams.causal_attn);
+ 
+-    const int64_t n_rs = mctx->get_recr()->get_n_rs();
+-
+-    if (inp_rs->s_copy) {
+-        GGML_ASSERT(ggml_backend_buffer_is_host(inp_rs->s_copy->buffer));
+-        int32_t * data = (int32_t *) inp_rs->s_copy->data;
+-
+-        // assuming copy destinations ALWAYS happen ONLY on the cells between head and head+n
+-        for (uint32_t i = 0; i < n_rs; ++i) {
+-            data[i] = mctx->get_recr()->s_copy(i);
+-        }
+-    }
++    inp_rs->set_input(ubatch, mctx->get_recr());
+ }
+ 
+ bool llm_graph_input_mem_hybrid_k::can_reuse(const llm_graph_params & params) {
+@@ -1169,6 +1238,14 @@ bool llm_graph_input_mem_hybrid_k::can_reuse(const llm_graph_params & params) {
+ 
+     res &= inp_rs->s_copy_main->ne[0]  == params.ubatch.n_seqs;
+     res &= inp_rs->s_copy_extra->ne[0] == mctx->get_recr()->get_n_rs() - params.ubatch.n_seqs;
++    if (inp_rs->s_copy_current) {
++        res &= inp_rs->s_copy_current_main->ne[0]  == params.ubatch.n_seqs;
++        res &= inp_rs->s_copy_current_extra->ne[0] == mctx->get_recr()->get_n_rs() - params.ubatch.n_seqs;
++    }
++    if (inp_rs->s_copy_transaction) {
++        res &= inp_rs->s_copy_transaction_main->ne[0]  == params.ubatch.n_seqs;
++        res &= inp_rs->s_copy_transaction_extra->ne[0] == mctx->get_recr()->get_n_rs() - params.ubatch.n_seqs;
++    }
+ 
+     res &= inp_rs->head == mctx->get_recr()->get_head();
+     res &= inp_rs->rs_z == mctx->get_recr()->get_rs_z();
+@@ -1215,17 +1292,7 @@ void llm_graph_input_mem_hybrid_iswa::set_input(const llama_ubatch * ubatch) {
+         attn_ctx->get_swa()->set_input_v_rot(inp_attn->self_v_rot_swa);
+     }
+ 
+-    const int64_t n_rs = mctx->get_recr()->get_n_rs();
+-
+-    if (inp_rs->s_copy) {
+-        GGML_ASSERT(ggml_backend_buffer_is_host(inp_rs->s_copy->buffer));
+-        int32_t * data = (int32_t *) inp_rs->s_copy->data;
+-
+-        // assuming copy destinations ALWAYS happen ONLY on the cells between head and head+n
+-        for (uint32_t i = 0; i < n_rs; ++i) {
+-            data[i] = mctx->get_recr()->s_copy(i);
+-        }
+-    }
++    inp_rs->set_input(ubatch, mctx->get_recr());
+ }
+ 
+ bool llm_graph_input_mem_hybrid_iswa::can_reuse(const llm_graph_params & params) {
+@@ -1257,6 +1324,14 @@ bool llm_graph_input_mem_hybrid_iswa::can_reuse(const llm_graph_params & params)
+ 
+     res &= inp_rs->s_copy_main->ne[0]  == params.ubatch.n_seqs;
+     res &= inp_rs->s_copy_extra->ne[0] == mctx->get_recr()->get_n_rs() - params.ubatch.n_seqs;
++    if (inp_rs->s_copy_current) {
++        res &= inp_rs->s_copy_current_main->ne[0]  == params.ubatch.n_seqs;
++        res &= inp_rs->s_copy_current_extra->ne[0] == mctx->get_recr()->get_n_rs() - params.ubatch.n_seqs;
++    }
++    if (inp_rs->s_copy_transaction) {
++        res &= inp_rs->s_copy_transaction_main->ne[0]  == params.ubatch.n_seqs;
++        res &= inp_rs->s_copy_transaction_extra->ne[0] == mctx->get_recr()->get_n_rs() - params.ubatch.n_seqs;
++    }
+ 
+     res &= inp_rs->head == mctx->get_recr()->get_head();
+     res &= inp_rs->rs_z == mctx->get_recr()->get_rs_z();
+@@ -3462,6 +3537,48 @@ static std::unique_ptr<llm_graph_input_rs> build_rs_inp_impl(
+     inp->s_copy_main  = ggml_view_1d(ctx0, inp->s_copy, n_seqs, 0);
+     inp->s_copy_extra = ggml_view_1d(ctx0, inp->s_copy, n_rs - n_seqs, n_seqs * inp->s_copy->nb[0]);
+ 
++    const bool packed_mode = mctx_cur->use_packed_gdn_tree();
++    const bool packed_tree = packed_mode && ubatch.tree();
++
++    if (mctx_cur->use_compact_gdn_rollback() ||
++            (mctx_cur->use_transactional_gdn_replay() && (!packed_mode || packed_tree))) {
++        inp->s_copy_current = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, n_rs);
++        ggml_set_input(inp->s_copy_current);
++        inp->s_copy_current_main  = ggml_view_1d(ctx0, inp->s_copy_current, n_seqs, 0);
++        inp->s_copy_current_extra = ggml_view_1d(ctx0, inp->s_copy_current, n_rs - n_seqs,
++                n_seqs * inp->s_copy_current->nb[0]);
++    }
++
++    if (mctx_cur->use_compact_gdn_rollback()) {
++        inp->rollback_mask = ggml_new_tensor_2d(ctx0, GGML_TYPE_F32,
++                mctx_cur->get_n_rs_seq(), n_seqs);
++        ggml_set_input(inp->rollback_mask);
++    }
++
++    if (mctx_cur->use_transactional_gdn_replay()) {
++        inp->s_copy_transaction = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, n_rs);
++        ggml_set_input(inp->s_copy_transaction);
++        inp->s_copy_transaction_main  = ggml_view_1d(ctx0, inp->s_copy_transaction, n_seqs, 0);
++        inp->s_copy_transaction_extra = ggml_view_1d(ctx0, inp->s_copy_transaction, n_rs - n_seqs,
++                n_seqs * inp->s_copy_transaction->nb[0]);
++
++        if (!packed_mode) {
++            inp->replay_meta = ggml_new_tensor_2d(ctx0, GGML_TYPE_I32, 2, n_seqs);
++            ggml_set_input(inp->replay_meta);
++        }
++
++        if (packed_tree) {
++            inp->tree_replay = ggml_new_tensor_2d(ctx0, GGML_TYPE_I32,
++                    mctx_cur->get_gdn_factor_slots() + 1, n_seqs);
++            ggml_set_input(inp->tree_replay);
++        }
++    }
++
++    if (ubatch.tree()) {
++        inp->tree_parent = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, ubatch.n_tokens);
++        ggml_set_input(inp->tree_parent);
++    }
++
+     inp->head = mctx_cur->get_head();
+     inp->rs_z = mctx_cur->get_rs_z();
+ 
+@@ -3489,6 +3606,34 @@ ggml_tensor * llm_graph_context::build_rs(
+                     get_state_rows);
+ }
+ 
++ggml_tensor * llm_graph_context::build_rs_compact(
++        llm_graph_input_rs * inp,
++        ggml_tensor * s,
++            int32_t   state_size,
++            int32_t   n_seqs,
++        const llm_graph_get_rows_fn & get_state_rows) const {
++    const auto * kv_state = inp->mctx;
++    GGML_ASSERT(inp->s_copy_current_main != nullptr);
++
++    return build_rs(s, inp->s_copy_current_main, inp->s_copy_current_extra, state_size, n_seqs,
++                    kv_state->get_n_rs(), kv_state->get_head(), kv_state->get_size(), kv_state->get_rs_z(),
++                    get_state_rows);
++}
++
++ggml_tensor * llm_graph_context::build_rs_transactional(
++        llm_graph_input_rs * inp,
++        ggml_tensor * s,
++            int32_t   state_size,
++            int32_t   n_seqs,
++        const llm_graph_get_rows_fn & get_state_rows) const {
++    const auto * kv_state = inp->mctx;
++    GGML_ASSERT(inp->s_copy_transaction_main != nullptr);
++
++    return build_rs(s, inp->s_copy_transaction_main, inp->s_copy_transaction_extra, state_size, n_seqs,
++                    kv_state->get_n_rs(), kv_state->get_head(), kv_state->get_size(), kv_state->get_rs_z(),
++                    get_state_rows);
++}
++
+ ggml_tensor * llm_graph_context::build_rwkv_token_shift_load(
+     llm_graph_input_rs * inp,
+     const llama_ubatch & ubatch,
+diff --git a/src/llama-graph.h b/src/llama-graph.h
+index b388e02..c635ffd 100644
+--- a/src/llama-graph.h
++++ b/src/llama-graph.h
+@@ -264,15 +264,26 @@ public:
+     virtual ~llm_graph_input_rs() = default;
+ 
+     void set_input(const llama_ubatch * ubatch) override;
++    void set_input(const llama_ubatch * ubatch, const llama_memory_recurrent_context * mctx_cur);
+ 
+     bool can_reuse(const llm_graph_params & params) override;
+ 
+-    ggml_tensor * s_copy;  // I32 [n_rs]
++    ggml_tensor * s_copy         = nullptr; // I32 [n_rs]
++    ggml_tensor * s_copy_current = nullptr; // I32 [n_rs], compact GDN main-state rows
++    ggml_tensor * s_copy_transaction = nullptr; // I32 [n_rs], transactional selected-state rows
++    ggml_tensor * rollback_mask  = nullptr; // F32 [n_rs_seq, n_seqs], compact GDN only
++    ggml_tensor * replay_meta    = nullptr; // I32 [2, n_seqs]: first factor slot and count
++    ggml_tensor * tree_parent    = nullptr; // I32 [n_tokens]
++    ggml_tensor * tree_replay    = nullptr; // I32 [factor slots + 1, n_seqs]
+ 
+     // views of s_copy, computed once per graph
+     // and shared across layers which use build_rs
+-    ggml_tensor * s_copy_main;   // I32 [n_seqs]
+-    ggml_tensor * s_copy_extra;  // I32 [n_rs - n_seqs]
++    ggml_tensor * s_copy_main          = nullptr; // I32 [n_seqs]
++    ggml_tensor * s_copy_extra         = nullptr; // I32 [n_rs - n_seqs]
++    ggml_tensor * s_copy_current_main  = nullptr; // I32 [n_seqs]
++    ggml_tensor * s_copy_current_extra = nullptr; // I32 [n_rs - n_seqs]
++    ggml_tensor * s_copy_transaction_main  = nullptr; // I32 [n_seqs]
++    ggml_tensor * s_copy_transaction_extra = nullptr; // I32 [n_rs - n_seqs]
+ 
+     const llama_memory_recurrent_context * mctx;
+ 
+@@ -1320,12 +1331,26 @@ struct llm_graph_context {
+     llm_graph_input_rs * build_rs_inp() const;
+ 
+     ggml_tensor * build_rs(
+-            llm_graph_input_rs * inp,
++        llm_graph_input_rs * inp,
+             ggml_tensor * s,
+                 int32_t   state_size,
+                 int32_t   n_seqs,
+             const llm_graph_get_rows_fn & get_state_rows = ggml_get_rows) const;
+ 
++    ggml_tensor * build_rs_compact(
++        llm_graph_input_rs * inp,
++        ggml_tensor * s,
++            int32_t   state_size,
++            int32_t   n_seqs,
++        const llm_graph_get_rows_fn & get_state_rows = ggml_get_rows) const;
++
++    ggml_tensor * build_rs_transactional(
++        llm_graph_input_rs * inp,
++        ggml_tensor * s,
++            int32_t   state_size,
++            int32_t   n_seqs,
++        const llm_graph_get_rows_fn & get_state_rows = ggml_get_rows) const;
++
+     ggml_tensor * build_rwkv_token_shift_load(
+         llm_graph_input_rs * inp,
+         const llama_ubatch & ubatch,
+diff --git a/src/llama-kv-cache-dsv4.cpp b/src/llama-kv-cache-dsv4.cpp
+index 58f78e4..aff88ee 100644
+--- a/src/llama-kv-cache-dsv4.cpp
++++ b/src/llama-kv-cache-dsv4.cpp
+@@ -151,6 +151,7 @@ static llama_ubatch dsv4_build_raw_write_ubatch(const llama_ubatch & ubatch) {
+ 
+     llama_ubatch res {
+         /*.b_equal_seqs =*/ true,
++        /*.b_tree       =*/ false,
+         /*.n_tokens     =*/ n_tokens,
+         /*.n_seq_tokens =*/ n_seq_tokens,
+         /*.n_seqs       =*/ ubatch.n_seqs_unq,
+@@ -164,6 +165,8 @@ static llama_ubatch dsv4_build_raw_write_ubatch(const llama_ubatch & ubatch) {
+         /*.seq_id_unq   =*/ data->seq_id_unq.data(),
+         /*.seq_idx      =*/ data->seq_idx.data(),
+         /*.output       =*/ data->output.data(),
++        /*.tree_parent  =*/ nullptr,
++        /*.tree_main_nodes =*/ 0,
+         /*.data         =*/ data,
+     };
+ 
+diff --git a/src/llama-memory-hybrid.cpp b/src/llama-memory-hybrid.cpp
+index 42c7381..1708b5e 100644
+--- a/src/llama-memory-hybrid.cpp
++++ b/src/llama-memory-hybrid.cpp
+@@ -65,6 +65,17 @@ llama_memory_hybrid::llama_memory_hybrid(
+     )) {}
+ 
+ llama_memory_context_ptr llama_memory_hybrid::init_batch(llama_batch_allocr & balloc, uint32_t n_ubatch, bool embd_all) {
++    bool packed_tree_batch = false;
++    if (mem_recr->packed_gdn_tree) {
++        const llama_batch & batch = balloc.get_batch();
++        for (int32_t i = 0; i < batch.n_tokens; ++i) {
++            if (batch.n_seq_id[i] > 1) {
++                packed_tree_batch = true;
++                break;
++            }
++        }
++    }
++
+     do {
+         balloc.split_reset();
+ 
+@@ -74,7 +85,9 @@ llama_memory_context_ptr llama_memory_hybrid::init_batch(llama_batch_allocr & ba
+         while (true) {
+             llama_ubatch ubatch;
+ 
+-            if (embd_all) {
++            if (packed_tree_batch) {
++                ubatch = balloc.split_tree(n_ubatch);
++            } else if (embd_all) {
+                 // if all tokens are output, split by sequence
+                 ubatch = balloc.split_seq(n_ubatch);
+             } else {
+@@ -170,11 +183,21 @@ void llama_memory_hybrid::seq_div(llama_seq_id seq_id, llama_pos p0, llama_pos p
+ }
+ 
+ llama_pos llama_memory_hybrid::seq_pos_min(llama_seq_id seq_id) const {
++    if (mem_recr->packed_gdn_tree && seq_id >= (llama_seq_id) mem_recr->size) {
++        // A recurrent sequence is represented by one state cell, so its
++        // logical min and max are both the last committed position.  Virtual
++        // tree sequences have attention KV only; expose the same logical
++        // shape so coupled-prefix validation can compare them with seq 0.
++        return mem_attn->seq_pos_max(seq_id);
++    }
+     // the min of the total cache is the max of the two caches' min values
+     return std::max(mem_attn->seq_pos_min(seq_id), mem_recr->seq_pos_min(seq_id));
+ }
+ 
+ llama_pos llama_memory_hybrid::seq_pos_max(llama_seq_id seq_id) const {
++    if (mem_recr->packed_gdn_tree && seq_id >= (llama_seq_id) mem_recr->size) {
++        return mem_attn->seq_pos_max(seq_id);
++    }
+     // the max of the total cache is the min of the two caches' max values
+     return std::min(mem_attn->seq_pos_max(seq_id), mem_recr->seq_pos_max(seq_id));
+ }
+diff --git a/src/llama-memory-recurrent.cpp b/src/llama-memory-recurrent.cpp
+index e299097..f1aa7d0 100644
+--- a/src/llama-memory-recurrent.cpp
++++ b/src/llama-memory-recurrent.cpp
+@@ -8,6 +8,7 @@
+ 
+ #include <algorithm>
+ #include <cassert>
++#include <cstdlib>
+ #include <cstring>
+ #include <limits>
+ #include <map>
+@@ -34,6 +35,28 @@ llama_memory_recurrent::llama_memory_recurrent(
+ 
+     this->n_rs_seq = n_rs_seq;
+     rs_idx.assign(n_seq_max, 0);
++    rs_prev_n.assign(n_seq_max, 0);
++    rs_last_n.assign(n_seq_max, 0);
++
++    const char * compact_env = std::getenv("LLAMA_COMPACT_GDN_ROLLBACK");
++    compact_gdn_rollback = n_rs_seq > 0 && model.arch == LLM_ARCH_QWEN35 &&
++                           compact_env != nullptr && std::atoi(compact_env) != 0;
++    const char * transactional_env = std::getenv("LLAMA_GDN_TRANSACTIONAL_REPLAY");
++    transactional_gdn_replay = n_rs_seq > 0 && model.arch == LLM_ARCH_QWEN35 &&
++                               transactional_env != nullptr && std::atoi(transactional_env) != 0;
++    const char * tree_env = std::getenv("LLAMA_PACKED_GDN_TREE");
++    packed_gdn_tree = transactional_gdn_replay && tree_env != nullptr && std::atoi(tree_env) != 0;
++    GGML_ASSERT(!compact_gdn_rollback || !transactional_gdn_replay);
++    if (compact_gdn_rollback || transactional_gdn_replay) {
++        // Ridge/Qwen3.8 uses scalar-gate GDN.  Duplicate the key per value
++        // head so each factor is a dense [gate, key, delta] record.
++        gdn_factor_size = (2*hparams.ssm_d_state + 1)*hparams.ssm_dt_rank;
++        gdn_factor_slots = packed_gdn_tree ? 32 : (transactional_gdn_replay ? n_rs_seq + 1 : n_rs_seq);
++    }
++    tree_seq_to_node.assign(LLAMA_MAX_SEQ, -1);
++    tree_input_replay_path.resize(n_seq_max);
++    tree_replay_path.resize(n_seq_max);
++    tree_selected_node.assign(n_seq_max, -1);
+ 
+     cells.clear();
+     cells.resize(mem_size);
+@@ -51,7 +74,8 @@ llama_memory_recurrent::llama_memory_recurrent(
+         auto it = ctx_map.find(buft);
+         if (it == ctx_map.end()) {
+             ggml_init_params params = {
+-                /*.mem_size   =*/ size_t(2u*n_layer*ggml_tensor_overhead()),
++                /*.mem_size   =*/ size_t((packed_gdn_tree ? 4u :
++                        ((compact_gdn_rollback || transactional_gdn_replay) ? 3u : 2u))*n_layer*ggml_tensor_overhead()),
+                 /*.mem_buffer =*/ NULL,
+                 /*.no_alloc   =*/ true,
+             };
+@@ -70,7 +94,9 @@ llama_memory_recurrent::llama_memory_recurrent(
+     };
+ 
+     r_l.resize(n_layer);
++    c_l.resize(n_layer);
+     s_l.resize(n_layer);
++    f_l.resize(n_layer);
+ 
+     for (int i = 0; i < n_layer; i++) {
+         if (filter && !filter(i)) {
+@@ -96,13 +122,30 @@ llama_memory_recurrent::llama_memory_recurrent(
+             throw std::runtime_error("failed to create ggml context for rs cache");
+         }
+ 
+-        const uint32_t n_rows = mem_size * (1 + n_rs_seq);
+-        ggml_tensor * r = ggml_new_tensor_2d(ctx, type_r, hparams.n_embd_r(), n_rows);
+-        ggml_tensor * s = ggml_new_tensor_2d(ctx, type_s, hparams.n_embd_s(), n_rows);
++        const uint32_t n_rows_r = mem_size * (packed_gdn_tree ? 1 : (1 + n_rs_seq));
++        const uint32_t n_rows_s = mem_size * ((transactional_gdn_replay || compact_gdn_rollback) ? 1 : (1 + n_rs_seq));
++        ggml_tensor * r = ggml_new_tensor_2d(ctx, type_r, hparams.n_embd_r(), n_rows_r);
++        ggml_tensor * s = ggml_new_tensor_2d(ctx, type_s, hparams.n_embd_s(), n_rows_s);
+         ggml_format_name(r, "cache_r_l%d", i);
+         ggml_format_name(s, "cache_s_l%d", i);
+         r_l[i] = r;
+         s_l[i] = s;
++
++        if (packed_gdn_tree) {
++            GGML_ASSERT(hparams.ssm_d_conv > 1 && hparams.n_embd_r() % (hparams.ssm_d_conv - 1) == 0);
++            const int64_t conv_channels = hparams.n_embd_r() / (hparams.ssm_d_conv - 1);
++            ggml_tensor * c = ggml_new_tensor_2d(ctx, GGML_TYPE_F32,
++                    conv_channels*gdn_factor_slots, mem_size);
++            ggml_format_name(c, "cache_conv_f_l%d", i);
++            c_l[i] = c;
++        }
++
++        if (compact_gdn_rollback || transactional_gdn_replay) {
++            ggml_tensor * f = ggml_new_tensor_2d(ctx, GGML_TYPE_F32,
++                    (int64_t) gdn_factor_size*gdn_factor_slots, mem_size);
++            ggml_format_name(f, "cache_gdn_f_l%d", i);
++            f_l[i] = f;
++        }
+     }
+ 
+     // allocate tensors and initialize the buffers to avoid NaNs in the padding
+@@ -119,11 +162,14 @@ llama_memory_recurrent::llama_memory_recurrent(
+     {
+         const size_t memory_size_r = size_r_bytes();
+         const size_t memory_size_s = size_s_bytes();
++        const size_t memory_size_f = size_f_bytes();
+ 
+-        LLAMA_LOG_INFO("%s: size = %7.2f MiB (%6u cells, %3d layers, %2u seqs %2u rs_seq), R (%s): %7.2f MiB, S (%s): %7.2f MiB\n", __func__,
+-                (float)(memory_size_r + memory_size_s) / (1024.0f * 1024.0f), mem_size, n_layer, n_seq_max, n_rs_seq,
++        LLAMA_LOG_INFO("%s: size = %7.2f MiB (%6u cells, %3d layers, %2u seqs %2u rs_seq%s), R (%s): %7.2f MiB, S (%s): %7.2f MiB, F: %7.2f MiB\n", __func__,
++                (float)(memory_size_r + memory_size_s + memory_size_f) / (1024.0f * 1024.0f), mem_size, n_layer, n_seq_max, n_rs_seq,
++                transactional_gdn_replay ? ", transactional-gdn" : (compact_gdn_rollback ? ", compact-gdn" : ""),
+                 ggml_type_name(type_r), (float)memory_size_r / (1024.0f * 1024.0f),
+-                ggml_type_name(type_s), (float)memory_size_s / (1024.0f * 1024.0f));
++                ggml_type_name(type_s), (float)memory_size_s / (1024.0f * 1024.0f),
++                (float)memory_size_f / (1024.0f * 1024.0f));
+     }
+ }
+ 
+@@ -145,9 +191,22 @@ void llama_memory_recurrent::clear(bool data) {
+     }
+ 
+     std::fill(rs_idx.begin(), rs_idx.end(), 0);
++    std::fill(rs_prev_n.begin(), rs_prev_n.end(), 0);
++    std::fill(rs_last_n.begin(), rs_last_n.end(), 0);
++    for (auto & path : tree_input_replay_path) {
++        path.clear();
++    }
++    for (auto & path : tree_replay_path) {
++        path.clear();
++    }
++    std::fill(tree_selected_node.begin(), tree_selected_node.end(), -1);
+ }
+ 
+ bool llama_memory_recurrent::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
++    if (packed_gdn_tree && seq_id >= (llama_seq_id) size) {
++        return true;
++    }
++
+     uint32_t new_head = size;
+ 
+     if (p0 < 0) {
+@@ -166,6 +225,38 @@ bool llama_memory_recurrent::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos
+     const bool rm_all = p0 == 0 && p1 == std::numeric_limits<llama_pos>::max();
+     if (rm_all) {
+         set_rs_idx(seq_id, 0);
++        if (seq_id >= 0 && (size_t) seq_id < rs_prev_n.size()) {
++            rs_prev_n[seq_id] = 0;
++            rs_last_n[seq_id] = 0;
++        }
++        if (seq_id >= 0 && (size_t) seq_id < tree_replay_path.size()) {
++            tree_replay_path[seq_id].clear();
++            tree_selected_node[seq_id] = -1;
++        }
++
++        // Compact GDN keeps only the current S plane.  A released recurrent
++        // cell can therefore become the zero source for the next sequence,
++        // unlike the ordinary rollback layout where another snapshot plane is
++        // available.  Clear the exclusively-owned compact rows eagerly so a
++        // later graph cannot observe the previous sequence through that zero
++        // source.  Shared cells must stay intact for their remaining owners.
++        if ((compact_gdn_rollback || transactional_gdn_replay) && seq_id >= 0 && (uint32_t) seq_id < size) {
++            const int32_t tail_id = cells[seq_id].tail;
++            if (tail_id >= 0 && cells[tail_id].seq_id.size() == 1 && cells[tail_id].has_seq_id(seq_id)) {
++                for (ggml_tensor * s : s_l) {
++                    if (s != nullptr) {
++                        ggml_backend_tensor_memset(s, 0, (size_t) tail_id * s->nb[1],
++                                ggml_row_size(s->type, s->ne[0]));
++                    }
++                }
++                for (ggml_tensor * f : f_l) {
++                    if (f != nullptr) {
++                        ggml_backend_tensor_memset(f, 0, (size_t) tail_id * f->nb[1],
++                                ggml_row_size(f->type, f->ne[0]));
++                    }
++                }
++            }
++        }
+     }
+ 
+     // models like Mamba or RWKV can't have a state partially erased at the end
+@@ -179,6 +270,36 @@ bool llama_memory_recurrent::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos
+         if (tail_id >= 0) {
+             auto & cell = cells[tail_id];
+ 
++            if (packed_gdn_tree && !tree_parent.empty() && 0 < p0 && p0 <= cell.pos + 1 && p1 > cell.pos) {
++                if (tree_selected_node[seq_id] < 0 && !tree_replay_path[seq_id].empty() && p0 == cell.pos + 1) {
++                    return true;
++                }
++
++                int32_t node = tree_selected_node[seq_id];
++                const bool selected_tree_branch = node >= 0;
++                if (node < 0) {
++                    for (uint32_t i = 0; i < tree_main_nodes; ++i) {
++                        if (tree_pos[i] < p0) {
++                            node = (int32_t) i;
++                        }
++                    }
++                }
++                GGML_ASSERT(node >= 0 && (size_t) node < tree_parent.size());
++
++                auto & path = tree_replay_path[seq_id];
++                path.clear();
++                for (int32_t current = node; current >= 0; current = tree_parent[current]) {
++                    path.push_back(current);
++                }
++                std::reverse(path.begin(), path.end());
++                GGML_ASSERT(path.size() <= gdn_factor_slots);
++
++                cell.pos = selected_tree_branch ? tree_pos[node] : p0 - 1;
++                tree_selected_node[seq_id] = -1;
++                rs_idx[seq_id] = 0;
++                return true;
++            }
++
+             // partial rollback via per-token snapshot index (bounded by n_rs_seq)
+             if (0 < p0 && p0 <= cell.pos && p1 > cell.pos) {
+                 const llama_pos rollback = cell.pos - (p0 - 1);
+@@ -236,6 +357,17 @@ bool llama_memory_recurrent::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos
+ }
+ 
+ void llama_memory_recurrent::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p0, llama_pos p1) {
++    if (packed_gdn_tree && seq_id_src >= (llama_seq_id) size &&
++            seq_id_dst >= 0 && (uint32_t) seq_id_dst < size) {
++        if (p0 == p1 && (size_t) seq_id_src < tree_seq_to_node.size()) {
++            tree_selected_node[seq_id_dst] = tree_seq_to_node[seq_id_src];
++        }
++        return;
++    }
++    if (packed_gdn_tree && seq_id_dst >= (llama_seq_id) size) {
++        return;
++    }
++
+     if (seq_id_src == seq_id_dst) {
+         return;
+     }
+@@ -269,6 +401,12 @@ void llama_memory_recurrent::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id
+             cell_src.seq_id.insert(seq_id_dst);
+             tail_dst.tail = tail_src.tail;
+         }
++
++        if ((size_t) seq_id_src < rs_last_n.size() && (size_t) seq_id_dst < rs_last_n.size()) {
++            rs_idx[seq_id_dst]    = rs_idx[seq_id_src];
++            rs_prev_n[seq_id_dst] = rs_prev_n[seq_id_src];
++            rs_last_n[seq_id_dst] = rs_last_n[seq_id_src];
++        }
+     }
+ }
+ 
+@@ -473,6 +611,10 @@ bool llama_memory_recurrent::prepare(const std::vector<llama_ubatch> & ubatches)
+     auto org_cells = cells;
+     auto org_used = used;
+     auto org_head = head;
++    auto org_rs_prev_n = rs_prev_n;
++    auto org_rs_last_n = rs_last_n;
++    auto org_tree_input_replay_path = tree_input_replay_path;
++    auto org_tree_replay_path = tree_replay_path;
+ 
+     bool success = true;
+ 
+@@ -487,11 +629,65 @@ bool llama_memory_recurrent::prepare(const std::vector<llama_ubatch> & ubatches)
+     cells = std::move(org_cells);
+     used = org_used;
+     head = org_head;
++    rs_prev_n = std::move(org_rs_prev_n);
++    rs_last_n = std::move(org_rs_last_n);
++    tree_input_replay_path = std::move(org_tree_input_replay_path);
++    tree_replay_path = std::move(org_tree_replay_path);
+ 
+     return success;
+ }
+ 
+ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
++    if (ubatch.tree()) {
++        GGML_ASSERT(packed_gdn_tree);
++        GGML_ASSERT(ubatch.n_seqs == 1 && ubatch.tree_main_nodes > 0);
++
++        std::vector<llama_pos> positions(ubatch.n_tokens);
++        for (uint32_t i = 0; i < ubatch.n_tokens; ++i) {
++            positions[i] = ubatch.pos[0] + (llama_pos) i;
++        }
++        std::vector<int32_t> n_seq_id(ubatch.n_tokens, 1);
++        std::vector<llama_seq_id *> seq_id(ubatch.n_tokens);
++        llama_seq_id seq0 = 0;
++        std::fill(seq_id.begin(), seq_id.end(), &seq0);
++
++        llama_ubatch linear = ubatch;
++        linear.b_tree = false;
++        linear.pos = positions.data();
++        linear.n_seq_id = n_seq_id.data();
++        linear.seq_id = seq_id.data();
++
++        if (!find_slot(linear)) {
++            return false;
++        }
++
++        const llama_seq_id main_seq = ubatch.seq_id[0][0];
++        GGML_ASSERT(main_seq >= 0 && (size_t) main_seq < cells.size());
++        const int32_t tail = cells[main_seq].tail;
++        GGML_ASSERT(tail >= 0);
++        cells[tail].pos = ubatch.pos[ubatch.tree_main_nodes - 1];
++        rs_last_n[main_seq] = ubatch.tree_main_nodes;
++
++        tree_input_replay_path = tree_replay_path;
++        for (auto & path : tree_replay_path) {
++            path.clear();
++        }
++
++        tree_parent.assign(ubatch.tree_parent, ubatch.tree_parent + ubatch.n_tokens);
++        tree_pos.assign(ubatch.pos, ubatch.pos + ubatch.n_tokens);
++        tree_main_nodes = ubatch.tree_main_nodes;
++        std::fill(tree_seq_to_node.begin(), tree_seq_to_node.end(), -1);
++        for (uint32_t node = 0; node < ubatch.n_tokens; ++node) {
++            for (int32_t s = 0; s < ubatch.n_seq_id[node]; ++s) {
++                const llama_seq_id seq = ubatch.seq_id[node][s];
++                if (seq > 0 && (size_t) seq < tree_seq_to_node.size()) {
++                    tree_seq_to_node[seq] = (int32_t) node;
++                }
++            }
++        }
++        return true;
++    }
++
+     const uint32_t n_seq_tokens = ubatch.n_seq_tokens;
+     const uint32_t n_seqs       = ubatch.n_seqs;
+ 
+@@ -655,6 +851,10 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
+         cell.seq_id.clear();
+         for (int32_t j = 0; j < ubatch.n_seq_id[i]; ++j) {
+             const llama_seq_id seq_id = ubatch.seq_id[i][j];
++            if (seq_id >= 0 && (size_t) seq_id < rs_last_n.size()) {
++                rs_prev_n[seq_id] = rs_last_n[seq_id];
++                rs_last_n[seq_id] = n_seq_tokens;
++            }
+             cell.seq_id.insert(seq_id);
+             cells[seq_id].tail = cell_id;
+         }
+@@ -740,6 +940,16 @@ size_t llama_memory_recurrent::size_s_bytes() const {
+     return size_s_bytes;
+ }
+ 
++size_t llama_memory_recurrent::size_f_bytes() const {
++    size_t size_f_bytes = 0;
++    for (const auto & f : f_l) {
++        if (f != nullptr) {
++            size_f_bytes += ggml_nbytes(f);
++        }
++    }
++    return size_f_bytes;
++}
++
+ void llama_memory_recurrent::state_write(llama_io_write_i & io, llama_seq_id seq_id, llama_state_seq_flags flags) const {
+     GGML_UNUSED(flags);
+ 
+@@ -849,6 +1059,13 @@ void llama_memory_recurrent::state_read(llama_io_read_i & io, llama_seq_id seq_i
+ 
+     if (n_rs_seq != 0) {
+         set_rs_idx(seq_id, 0);
++        if (seq_id < 0) {
++            std::fill(rs_prev_n.begin(), rs_prev_n.end(), 0);
++            std::fill(rs_last_n.begin(), rs_last_n.end(), 0);
++        } else if ((size_t) seq_id < rs_prev_n.size()) {
++            rs_prev_n[seq_id] = 0;
++            rs_last_n[seq_id] = 0;
++        }
+     }
+ }
+ 
+@@ -1247,10 +1464,106 @@ ggml_tensor * llama_memory_recurrent_context::get_r_l(int32_t il) const {
+     return mem->r_l[il];
+ }
+ 
++ggml_tensor * llama_memory_recurrent_context::get_c_l(int32_t il) const {
++    return mem->c_l[il];
++}
++
+ ggml_tensor * llama_memory_recurrent_context::get_s_l(int32_t il) const {
+     return mem->s_l[il];
+ }
+ 
++ggml_tensor * llama_memory_recurrent_context::get_f_l(int32_t il) const {
++    return mem->f_l[il];
++}
++
++bool llama_memory_recurrent_context::use_compact_gdn_rollback() const {
++    return mem->compact_gdn_rollback;
++}
++
++bool llama_memory_recurrent_context::use_transactional_gdn_replay() const {
++    return mem->transactional_gdn_replay;
++}
++
++bool llama_memory_recurrent_context::use_packed_gdn_tree() const {
++    return mem->packed_gdn_tree;
++}
++
++uint32_t llama_memory_recurrent_context::get_n_rs_seq() const {
++    return mem->n_rs_seq;
++}
++
++uint32_t llama_memory_recurrent_context::get_gdn_factor_size() const {
++    return mem->gdn_factor_size;
++}
++
++uint32_t llama_memory_recurrent_context::get_gdn_factor_slots() const {
++    return mem->gdn_factor_slots;
++}
++
++uint32_t llama_memory_recurrent_context::rollback_idx(int i) const {
++    const uint32_t cell_idx = i + mem->head;
++    if (!mem->cells[cell_idx].seq_id.empty()) {
++        const llama_seq_id seq = *mem->cells[cell_idx].seq_id.begin();
++        if (seq >= 0 && (size_t) seq < mem->rs_idx.size()) {
++            return mem->rs_idx[seq];
++        }
++    }
++    return 0;
++}
++
++int32_t llama_memory_recurrent_context::s_copy_current(int i) const {
++    const uint32_t cell_idx = i + mem->head;
++    return mem->cells[cell_idx].src0;
++}
++
++int32_t llama_memory_recurrent_context::s_copy_transactional(int i) const {
++    const uint32_t cell_idx = i + mem->head;
++    return mem->cells[cell_idx].src0;
++}
++
++void llama_memory_recurrent_context::replay_meta(int i, int32_t & first, int32_t & count) const {
++    first = 0;
++    count = 0;
++
++    const uint32_t cell_idx = i + mem->head;
++    if (mem->cells[cell_idx].seq_id.empty()) {
++        return;
++    }
++
++    const llama_seq_id seq = *mem->cells[cell_idx].seq_id.begin();
++    if (seq < 0 || (size_t) seq >= mem->rs_prev_n.size()) {
++        return;
++    }
++
++    const uint32_t rollback = mem->rs_idx[seq];
++    const uint32_t previous = mem->rs_prev_n[seq];
++    if (previous == 0) {
++        return;
++    }
++
++    // Large prompt ubatches are committed directly because retaining every
++    // factor would defeat the compact layout.  Only bounded speculative-sized
++    // ubatches are deferred and therefore need replay on the next call.
++    if (previous > mem->gdn_factor_slots) {
++        return;
++    }
++    GGML_ASSERT(rollback <= previous);
++    first = (int32_t) rollback;
++    count = (int32_t) (previous - rollback);
++}
++
++void llama_memory_recurrent_context::replay_path(int i, int32_t * path, uint32_t capacity) const {
++    std::fill(path, path + capacity, -1);
++    if (i < 0 || (size_t) i >= mem->tree_input_replay_path.size() || capacity == 0) {
++        return;
++    }
++
++    const auto & source = mem->tree_input_replay_path[i];
++    GGML_ASSERT(source.size() + 1 <= capacity);
++    path[0] = (int32_t) source.size();
++    std::copy(source.begin(), source.end(), path + 1);
++}
++
+ int32_t llama_memory_recurrent_context::s_copy(int i) const {
+     const uint32_t cell_idx = i + mem->head;
+     const int32_t  src0     = mem->cells[cell_idx].src0;
+@@ -1268,5 +1581,7 @@ int32_t llama_memory_recurrent_context::s_copy(int i) const {
+             mem->rs_idx[seq] = 0;
+         }
+     }
++    // Conv/R state always uses snapshot planes.  Compact GDN/S state uses
++    // s_copy_current() and applies its factor rollback in the graph.
+     return (int32_t)(idx * mem->size) + src0;
+ }
+diff --git a/src/llama-memory-recurrent.h b/src/llama-memory-recurrent.h
+index b13b7b7..252719c 100644
+--- a/src/llama-memory-recurrent.h
++++ b/src/llama-memory-recurrent.h
+@@ -73,8 +73,27 @@ public:
+     // number of recurrent-state snapshots per seq for rollback; tensors are widened to (1 + n_rs_seq) groups
+     uint32_t n_rs_seq = 0;
+ 
++    // Experimental scalar-GDN rollback mode.  Instead of keeping n_rs_seq full
++    // S matrices, keep the current S matrix plus (gate, key, delta) factors for
++    // each rollback token.  R/conv states still use ordinary snapshots.
++    bool     compact_gdn_rollback = false;
++    bool     transactional_gdn_replay = false;
++    bool     packed_gdn_tree = false;
++    uint32_t gdn_factor_size      = 0;
++    uint32_t gdn_factor_slots     = 0;
++
+     // per-seq rollback index
+     std::vector<uint32_t> rs_idx;
++    std::vector<uint32_t> rs_prev_n;
++    std::vector<uint32_t> rs_last_n;
++
++    std::vector<int32_t> tree_parent;
++    std::vector<llama_pos> tree_pos;
++    std::vector<int32_t> tree_seq_to_node;
++    std::vector<std::vector<int32_t>> tree_input_replay_path;
++    std::vector<std::vector<int32_t>> tree_replay_path;
++    std::vector<int32_t> tree_selected_node;
++    uint32_t tree_main_nodes = 0;
+ 
+     void set_rs_idx(llama_seq_id seq_id, uint32_t idx);
+ 
+@@ -110,7 +129,9 @@ public:
+ 
+     // per layer
+     std::vector<ggml_tensor *> r_l;
++    std::vector<ggml_tensor *> c_l;
+     std::vector<ggml_tensor *> s_l;
++    std::vector<ggml_tensor *> f_l;
+ 
+ private:
+     //const llama_model & model;
+@@ -125,6 +146,7 @@ private:
+ 
+     size_t size_r_bytes() const;
+     size_t size_s_bytes() const;
++    size_t size_f_bytes() const;
+ 
+     void state_write_meta(llama_io_write_i & io, const std::vector<std::pair<uint32_t, uint32_t>> & cell_ranges, llama_seq_id seq_id = -1) const;
+     void state_write_data(llama_io_write_i & io, const std::vector<std::pair<uint32_t, uint32_t>> & cell_ranges) const;
+@@ -169,7 +191,21 @@ public:
+     uint32_t get_size() const;
+ 
+     ggml_tensor * get_r_l(int32_t il) const;
++    ggml_tensor * get_c_l(int32_t il) const;
+     ggml_tensor * get_s_l(int32_t il) const;
++    ggml_tensor * get_f_l(int32_t il) const;
++
++    bool     use_compact_gdn_rollback() const;
++    bool     use_transactional_gdn_replay() const;
++    bool     use_packed_gdn_tree() const;
++    uint32_t get_n_rs_seq() const;
++    uint32_t get_gdn_factor_size() const;
++    uint32_t get_gdn_factor_slots() const;
++    uint32_t rollback_idx(int i) const;
++    int32_t  s_copy_current(int i) const;
++    int32_t  s_copy_transactional(int i) const;
++    void     replay_meta(int i, int32_t & first, int32_t & count) const;
++    void     replay_path(int i, int32_t * path, uint32_t capacity) const;
+ 
+     int32_t s_copy(int i) const;
+ 
+diff --git a/src/models/delta-net-base.cpp b/src/models/delta-net-base.cpp
+index ad66126..2c9ca27 100644
+--- a/src/models/delta-net-base.cpp
++++ b/src/models/delta-net-base.cpp
+@@ -399,7 +399,7 @@ std::pair<ggml_tensor *, ggml_tensor *> llm_build_delta_net_base::build_delta_ne
+     GGML_ASSERT(s->ne[0] == S_v && s->ne[1] == S_v && s->ne[2] == H_v      && s->ne[3] == n_seqs);
+ 
+     // K=1: output carries the final state only. state s is 4D [S_v, S_v, H_v, n_seqs].
+-    ggml_tensor * result = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, /*K=*/1);
++    ggml_tensor * result = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, nullptr, nullptr, /*K=*/1);
+     if (n_tokens == 1) {
+         res->add_fused_node({LLM_FUSED_OP_GDN_AR, result, il});
+     } else {
+@@ -476,7 +476,7 @@ ggml_tensor * llm_build_delta_net_base::build_conv_state(
+ 
+     const size_t row_size  = ggml_row_size(conv_states_all->type, row_count);
+ 
+-    if (cparams.n_rs_seq == 0) {
++    if (cparams.n_rs_seq == 0 || mctx_cur->use_packed_gdn_tree()) {
+         const int64_t s_idx  = conv_input->ne[0] - conv_states->ne[0];
+         const int64_t s_slot = 0;
+ 
+@@ -563,8 +563,107 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
+     const int64_t D = S_v * S_v * H_v;
+     const int64_t K = cparams.n_rs_seq + 1;
+ 
++    const bool compact       = mctx_cur->use_compact_gdn_rollback();
++    const bool transactional = mctx_cur->use_transactional_gdn_replay();
++    const bool packed_tree   = mctx_cur->use_packed_gdn_tree();
++
++    if (packed_tree && !ubatch.tree()) {
++        ggml_tensor * gdn_out = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, nullptr, nullptr, 1);
++        if (n_seq_tokens > 1) {
++            res->add_fused_node({LLM_FUSED_OP_GDN_CH, gdn_out, il});
++        } else {
++            res->add_fused_node({LLM_FUSED_OP_GDN_AR, gdn_out, il});
++        }
++
++        const int64_t attn_score_elems = S_v * H_v * n_seq_tokens * n_seqs;
++        ggml_tensor * output = ggml_view_4d(ctx0, gdn_out,
++            S_v, H_v, n_seq_tokens, n_seqs,
++            ggml_row_size(gdn_out->type, S_v),
++            ggml_row_size(gdn_out->type, S_v * H_v),
++            ggml_row_size(gdn_out->type, S_v * H_v * n_seq_tokens), 0);
++        ggml_tensor * src_state = ggml_view_2d(ctx0, gdn_out,
++            D, n_seqs, ggml_row_size(gdn_out->type, D),
++            ggml_row_size(gdn_out->type, attn_score_elems));
++        ggml_tensor * dst_state = ggml_view_2d(ctx0, ssm_states_all,
++            D, n_seqs, ssm_states_all->nb[1],
++            (size_t) kv_head * hparams.n_embd_s() * ggml_element_size(ssm_states_all));
++        ggml_build_forward_expand(gf, ggml_cpy(ctx0, src_state, dst_state));
++        return output;
++    }
++
++    ggml_tensor * factors = nullptr;
++    const int64_t factor_slots = (compact || transactional) ? mctx_cur->get_gdn_factor_slots() : 0;
++    if (compact || transactional) {
++        const int64_t factor_size = mctx_cur->get_gdn_factor_size();
++        ggml_tensor * factors_all = mctx_cur->get_f_l(il);
++        GGML_ASSERT(factors_all != nullptr);
++        factors = build_rs_compact(inp, factors_all, factor_size*factor_slots, n_seqs);
++        cb(factors, "gdn_rollback_factors", il);
++    }
++
++    if (compact) {
++        // M is stored transposed.  For scalar GDN each token applies
++        //   M' = exp(g) M + delta k^T,
++        // so a rejected token can be removed exactly (up to FP roundoff) with
++        //   M = (M' - delta k^T) / exp(g).
++        // Apply newest factors first; rollback_mask makes this branchless for
++        // sequences that did not request all available rollback slots.
++        const int64_t n_slots     = factor_slots;
++        const int64_t head_record = 1 + 2*S_v;
++        const int64_t factor_size = head_record * H_v;
++
++        GGML_ASSERT(g->ne[0] == 1);
++        GGML_ASSERT((int64_t) mctx_cur->get_gdn_factor_size() == factor_size);
++        GGML_ASSERT(inp->rollback_mask != nullptr);
++
++        for (int64_t slot = 0; slot < n_slots; ++slot) {
++            const size_t slot_off = slot * factor_size * sizeof(float);
++            const size_t seq_stride = factors->nb[1];
++
++            ggml_tensor * gate_raw = ggml_view_4d(ctx0, factors,
++                    1, 1, H_v, n_seqs,
++                    sizeof(float), head_record*sizeof(float), seq_stride,
++                    slot_off);
++            ggml_tensor * key = ggml_view_4d(ctx0, factors,
++                    S_v, 1, H_v, n_seqs,
++                    S_v*sizeof(float), head_record*sizeof(float), seq_stride,
++                    slot_off + sizeof(float));
++            ggml_tensor * delta = ggml_view_4d(ctx0, factors,
++                    S_v, 1, H_v, n_seqs,
++                    S_v*sizeof(float), head_record*sizeof(float), seq_stride,
++                    slot_off + (1 + S_v)*sizeof(float));
++
++            ggml_tensor * outer = ggml_out_prod(ctx0, key, delta);
++            ggml_tensor * gate  = ggml_exp(ctx0, gate_raw);
++            gate = ggml_repeat_4d(ctx0, gate, S_v, S_v, H_v, n_seqs);
++
++            ggml_tensor * prior = ggml_div(ctx0, ggml_sub(ctx0, s, outer), gate);
++
++            ggml_tensor * mask = ggml_view_4d(ctx0, inp->rollback_mask,
++                    1, 1, 1, n_seqs,
++                    sizeof(float), sizeof(float), inp->rollback_mask->nb[1],
++                    slot*sizeof(float));
++            mask = ggml_repeat_4d(ctx0, mask, S_v, S_v, H_v, n_seqs);
++
++            // s + mask*(prior - s), where mask is exactly zero or one.
++            s = ggml_add(ctx0, s, ggml_mul(ctx0, mask, ggml_sub(ctx0, prior, s)));
++            cb(s, "gdn_state_rollback", il);
++        }
++    }
++
+     // state s is 4D [S_v, S_v, H_v, n_seqs]; K snapshot slots are written into the output.
+-    ggml_tensor * gdn_out = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, K);
++    ggml_tensor * gdn_out;
++    if (packed_tree && ubatch.tree()) {
++        GGML_ASSERT(inp->tree_parent != nullptr && inp->tree_replay != nullptr);
++        gdn_out = ggml_gated_delta_net_tree(ctx0, q, k, v, g, b, s,
++                factors, inp->tree_parent, inp->tree_replay,
++                factor_slots, ubatch.tree_main_nodes);
++    } else {
++        gdn_out = ggml_gated_delta_net(ctx0, q, k, v, g, b, s,
++                transactional ? factors : nullptr,
++                transactional ? inp->replay_meta : nullptr,
++                (compact || transactional) ? -factor_slots : K);
++    }
+     if (n_seq_tokens > 1) {
+         res->add_fused_node({LLM_FUSED_OP_GDN_CH, gdn_out, il});
+     } else {
+@@ -584,6 +683,66 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
+ 
+     const size_t row_size = hparams.n_embd_s() * ggml_element_size(ssm_states_all);
+ 
++    if (transactional) {
++        // Deferred-commit output tail: one state containing the accepted
++        // prefix replayed from the prior transaction, followed by newest-first
++        // factors for the current verification batch.  The current candidate
++        // is intentionally not materialized; the next call reconstructs the
++        // accepted part from these factors after sampling decides the commit.
++        ggml_tensor * src_state = ggml_view_2d(ctx0, gdn_out,
++            D, n_seqs, ggml_row_size(gdn_out->type, D),
++            ggml_row_size(gdn_out->type, attn_score_elems));
++        ggml_tensor * dst_state = ggml_view_2d(ctx0, ssm_states_all,
++            D, n_seqs, ssm_states_all->nb[1],
++            (size_t) kv_head * row_size);
++        ggml_build_forward_expand(gf, ggml_cpy(ctx0, src_state, dst_state));
++
++        const int64_t factor_size = mctx_cur->get_gdn_factor_size();
++        const int64_t n_written   = std::min<int64_t>(n_seq_tokens, factor_slots);
++        if (n_written > 0) {
++            ggml_tensor * factors_all = mctx_cur->get_f_l(il);
++            const size_t factor_off = (attn_score_elems + state_size_per_snap) * sizeof(float);
++            ggml_tensor * src_factors = ggml_view_2d(ctx0, gdn_out,
++                factor_size*n_written, n_seqs,
++                factor_size*factor_slots*sizeof(float), factor_off);
++            ggml_tensor * dst_factors = ggml_view_2d(ctx0, factors_all,
++                factor_size*n_written, n_seqs,
++                factors_all->nb[1], (size_t) kv_head*factors_all->nb[1]);
++            ggml_build_forward_expand(gf, ggml_cpy(ctx0, src_factors, dst_factors));
++        }
++
++        return output;
++    }
++
++    if (compact) {
++        // Compact output tail: one current S matrix followed by newest-first
++        // factor records.  Persist S in its single cache plane and factors in
++        // their narrow per-cell cache.
++        ggml_tensor * src_state = ggml_view_2d(ctx0, gdn_out,
++            D, n_seqs, ggml_row_size(gdn_out->type, D),
++            ggml_row_size(gdn_out->type, attn_score_elems));
++        ggml_tensor * dst_state = ggml_view_2d(ctx0, ssm_states_all,
++            D, n_seqs, ssm_states_all->nb[1],
++            (size_t) kv_head * row_size);
++        ggml_build_forward_expand(gf, ggml_cpy(ctx0, src_state, dst_state));
++
++        const int64_t factor_size = mctx_cur->get_gdn_factor_size();
++        const int64_t n_written   = std::min<int64_t>(n_seq_tokens, factor_slots);
++        if (n_written > 0) {
++            ggml_tensor * factors_all = mctx_cur->get_f_l(il);
++            const size_t factor_off = (attn_score_elems + state_size_per_snap) * sizeof(float);
++            ggml_tensor * src_factors = ggml_view_2d(ctx0, gdn_out,
++                factor_size*n_written, n_seqs,
++                factor_size*factor_slots*sizeof(float), factor_off);
++            ggml_tensor * dst_factors = ggml_view_2d(ctx0, factors_all,
++                factor_size*n_written, n_seqs,
++                factors_all->nb[1], (size_t) kv_head*factors_all->nb[1]);
++            ggml_build_forward_expand(gf, ggml_cpy(ctx0, src_factors, dst_factors));
++        }
++
++        return output;
++    }
++
+     // op writes the last min(n_seq_tokens, K) snapshots; trailing slots are left unwritten
+     const int64_t n_written = std::min<int64_t>(n_seq_tokens, K);
+ 
+diff --git a/src/models/qwen35.cpp b/src/models/qwen35.cpp
+index 309dd43..6e181f6 100644
+--- a/src/models/qwen35.cpp
++++ b/src/models/qwen35.cpp
+@@ -386,13 +386,59 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
+     const int64_t conv_kernel_size = conv_kernel->ne[0];
+     const int64_t conv_channels    = d_inner + 2 * hparams.ssm_n_group * hparams.ssm_d_state;
+ 
+-    ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il);
++    ggml_tensor * conv_output_proper;
++    if (mctx_cur->use_packed_gdn_tree() && ubatch.tree()) {
++        GGML_ASSERT(inp->tree_parent != nullptr && inp->tree_replay != nullptr);
++        GGML_ASSERT(conv_kernel_size == 4);
++        const int64_t factor_slots = mctx_cur->get_gdn_factor_slots();
++        ggml_tensor * conv_state = build_rs_compact(inp, conv_states_all, hparams.n_embd_r(), n_seqs);
++        conv_state = ggml_reshape_3d(ctx0, conv_state, conv_kernel_size - 1, conv_channels, n_seqs);
++
++        ggml_tensor * conv_factors_all = mctx_cur->get_c_l(il);
++        GGML_ASSERT(conv_factors_all != nullptr);
++        ggml_tensor * conv_factors = build_rs_compact(inp, conv_factors_all,
++                conv_channels*factor_slots, n_seqs);
++        conv_factors = ggml_reshape_3d(ctx0, conv_factors, conv_channels, factor_slots, n_seqs);
++
++        ggml_tensor * packed = ggml_ssm_conv_tree(ctx0, qkv_mixed, conv_kernel,
++                conv_state, conv_factors, inp->tree_parent, inp->tree_replay, factor_slots);
++        conv_output_proper = ggml_view_3d(ctx0, packed,
++                conv_channels, n_seq_tokens, n_seqs,
++                conv_channels*sizeof(float), conv_channels*n_seq_tokens*sizeof(float), 0);
++
++        const size_t state_off = conv_channels*n_seq_tokens*sizeof(float);
++        ggml_tensor * committed = ggml_view_2d(ctx0, packed,
++                hparams.n_embd_r(), n_seqs, hparams.n_embd_r()*sizeof(float), state_off);
++        ggml_tensor * state_dst = ggml_view_2d(ctx0, conv_states_all,
++                hparams.n_embd_r(), n_seqs, conv_states_all->nb[1],
++                (size_t) mctx_cur->get_head()*conv_states_all->nb[1]);
++        ggml_build_forward_expand(gf, ggml_cpy(ctx0, committed, state_dst));
++
++        const size_t factor_off = state_off + hparams.n_embd_r()*n_seqs*sizeof(float);
++        ggml_tensor * new_factors = ggml_view_2d(ctx0, packed,
++                conv_channels*factor_slots, n_seqs,
++                conv_channels*factor_slots*sizeof(float), factor_off);
++        ggml_tensor * factor_dst = ggml_view_2d(ctx0, conv_factors_all,
++                conv_channels*factor_slots, n_seqs, conv_factors_all->nb[1],
++                (size_t) mctx_cur->get_head()*conv_factors_all->nb[1]);
++        ggml_build_forward_expand(gf, ggml_cpy(ctx0, new_factors, factor_dst));
++    } else {
++        ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed,
++                conv_kernel_size, conv_channels, il);
++        conv_output_proper = ggml_ssm_conv(ctx0, conv_input, conv_kernel);
++    }
+ 
+-    ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
++    ggml_tensor * state;
++    if (inp->mctx->use_transactional_gdn_replay()) {
++        state = build_rs_transactional(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
++    } else if (inp->mctx->use_compact_gdn_rollback()) {
++        state = build_rs_compact(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
++    } else {
++        state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
++    }
+     state = ggml_reshape_4d(ctx0, state, head_v_dim, head_v_dim, num_v_heads, n_seqs);
+     cb(state, "state_predelta", il);
+ 
+-    ggml_tensor * conv_output_proper = ggml_ssm_conv(ctx0, conv_input, conv_kernel);
+     cb(conv_output_proper, "conv_output_raw", il);
+ 
+     ggml_tensor * conv_output_silu = ggml_silu(ctx0, conv_output_proper);
+diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
+index 8e3b273..60a4778 100644
+--- a/tests/test-backend-ops.cpp
++++ b/tests/test-backend-ops.cpp
+@@ -4383,7 +4383,7 @@ struct test_gated_delta_net : public test_case {
+         // q/k are L2-normalised in qwen35/kimi-linear before delta_net
+         q = ggml_l2_norm(ctx, q, 1e-6f);
+         k = ggml_l2_norm(ctx, k, 1e-6f);
+-        ggml_tensor * out   = ggml_gated_delta_net(ctx, q, k, v, g, beta, state, K);
++        ggml_tensor * out   = ggml_gated_delta_net(ctx, q, k, v, g, beta, state, nullptr, nullptr, K);
+         return out;
+     }
+ 
+diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
+index a9edbd7..6a77571 100644
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -73,6 +73,7 @@ struct server_batch {
+         llama_pos pos;
+         bool output;
+         bool is_prompt; // for stats tracking
++        std::vector<llama_seq_id> seq_ids;
+     };
+     std::vector<token> tokens;
+     int32_t n_tokens_alloc = 0;
+@@ -100,10 +101,10 @@ struct server_batch {
+         }
+     }
+ 
+-    void init(int32_t n_tokens_alloc, int32_t n_embd) {
++    void init(int32_t n_tokens_alloc, int32_t n_embd, int32_t n_seq_per_token = 1) {
+         this->n_tokens_alloc = n_tokens_alloc;
+         this->n_embd = n_embd;
+-        batch = llama_batch_init(n_tokens_alloc, 0, 1);
++        batch = llama_batch_init(n_tokens_alloc, 0, n_seq_per_token);
+         tokens_ptr = batch.token;
+         tokens.reserve(n_tokens_alloc);
+     }
+@@ -114,7 +115,24 @@ struct server_batch {
+         if ((int32_t)tokens.size() >= n_tokens_alloc) {
+             return false;
+         }
+-        tokens.push_back({ id_slot, token, pos, output, is_prompt });
++        tokens.push_back({ id_slot, token, pos, output, is_prompt, { id_slot } });
++        return true;
++    }
++
++    bool add_tree(
++            int32_t id_slot,
++            llama_token token,
++            llama_pos pos,
++            const std::vector<llama_seq_id> & seq_ids,
++            bool output,
++            bool is_prompt) {
++        GGML_ASSERT(!has_embd);
++        GGML_ASSERT(batch.pos != nullptr);
++        GGML_ASSERT(!seq_ids.empty());
++        if ((int32_t) tokens.size() >= n_tokens_alloc) {
++            return false;
++        }
++        tokens.push_back({ id_slot, token, pos, output, is_prompt, seq_ids });
+         return true;
+     }
+ 
+@@ -123,7 +141,7 @@ struct server_batch {
+         if ((int32_t)tokens.size() >= n_tokens_alloc) {
+             return false;
+         }
+-        tokens.push_back({ id_slot, LLAMA_TOKEN_NULL, pos, output, is_prompt });
++        tokens.push_back({ id_slot, LLAMA_TOKEN_NULL, pos, output, is_prompt, { id_slot } });
+         has_embd = true;
+         embd.insert(embd.end(), embd_in.begin(), embd_in.end());
+         return true;
+@@ -159,7 +177,7 @@ struct server_batch {
+         common_batch_clear(batch);
+         for (int32_t i = 0; i < size(); i++) {
+             const auto & t = tokens[i];
+-            common_batch_add(batch, t.token, t.pos, { t.id_slot }, t.output);
++            common_batch_add(batch, t.token, t.pos, t.seq_ids, t.output);
+         }
+         if (has_embd) {
+             batch.token = nullptr; // will be restored on clear()
+@@ -209,6 +227,20 @@ struct server_slot {
+     llama_tokens spec_draft;
+     llama_tokens spec_prompt;
+     std::vector<int32_t> spec_i_batch;
++    std::vector<common_speculative_alternative> spec_alternatives;
++    struct packed_tree_leaf {
++        int32_t position = -1;
++        llama_token token = LLAMA_TOKEN_NULL;
++        llama_seq_id seq_id = -1;
++        int32_t i_batch = -1;
++        llama_pos pos = -1;
++    };
++    std::vector<packed_tree_leaf> spec_tree_leaves;
++    std::vector<llama_seq_id> spec_tree_seq_ids;
++    llama_seq_id spec_branch_seq_id = -1;
++    int32_t spec_branch_i_batch = -1;
++    llama_pos spec_branch_pos = -1;
++    llama_token spec_branch_token = LLAMA_TOKEN_NULL;
+     common_prompt_checkpoint spec_ckpt;
+     bool spec_is_replay = false;
+ 
+@@ -336,6 +368,16 @@ struct server_slot {
+         if (can_speculate()) {
+             spec_draft.clear();
+             spec_i_batch.clear();
++            spec_alternatives.clear();
++            for (const llama_seq_id seq_id : spec_tree_seq_ids) {
++                mem.seq_rm(seq_id, -1, -1);
++            }
++            spec_tree_leaves.clear();
++            spec_tree_seq_ids.clear();
++            spec_branch_seq_id = -1;
++            spec_branch_i_batch = -1;
++            spec_branch_pos = -1;
++            spec_branch_token = LLAMA_TOKEN_NULL;
+             spec_ckpt.clear();
+         }
+         generated_tokens.clear();
+@@ -861,6 +903,11 @@ private:
+     int trace = 0;        // env: LLAMA_TRACE
+     int slots_debug = 0;  // env: LLAMA_SERVER_SLOTS_DEBUG
+     int slots_n_diff = 0; // env: LLAMA_SERVER_SLOTS_N_DIFF
++    bool bvf_branch = false; // env: LLAMA_BVF_BRANCH
++    bool bvf_branch_adopt = true; // env: LLAMA_BVF_BRANCH_ADOPT
++    bool packed_gdn_tree = false; // env: LLAMA_PACKED_GDN_TREE
++    int32_t packed_gdn_tree_max_leaves = 2; // env: LLAMA_PACKED_GDN_TREE_MAX_LEAVES
++    bool spec_profile = false; // env: LLAMA_SPEC_PROFILE
+ 
+     int n_empty_consecutive = 0;
+ 
+@@ -966,6 +1013,12 @@ private:
+         const auto output_limits = server_output_limits(params_base);
+         params_base.n_outputs_max = output_limits.total;
+         params_base.n_outputs_max_per_seq = output_limits.per_seq;
++        const char * packed_tree_env = getenv("LLAMA_PACKED_GDN_TREE");
++        if (packed_tree_env != nullptr && atoi(packed_tree_env) != 0) {
++            const int32_t n_draft = common_speculative_n_max(&params_base.speculative);
++            params_base.n_outputs_max = std::min<int32_t>(
++                    params_base.n_batch, 1 + 3*std::max(0, n_draft));
++        }
+ 
+         const bool has_mmproj = !params.mmproj.path.empty();
+         const bool has_draft = params.speculative.has_dft();
+@@ -1240,6 +1293,61 @@ private:
+             }
+         }
+ 
++        {
++            const char * LLAMA_PACKED_GDN_TREE = getenv("LLAMA_PACKED_GDN_TREE");
++            const char * LLAMA_PACKED_GDN_TREE_MAX_LEAVES = getenv("LLAMA_PACKED_GDN_TREE_MAX_LEAVES");
++            packed_gdn_tree = LLAMA_PACKED_GDN_TREE ? atoi(LLAMA_PACKED_GDN_TREE) != 0 : false;
++            packed_gdn_tree_max_leaves = LLAMA_PACKED_GDN_TREE_MAX_LEAVES ?
++                    std::clamp(atoi(LLAMA_PACKED_GDN_TREE_MAX_LEAVES), 1, 25) : 2;
++            if (packed_gdn_tree) {
++                const char * transactional_gdn = getenv("LLAMA_GDN_TRANSACTIONAL_REPLAY");
++                if (params_base.n_parallel != 1 || !params_base.kv_unified) {
++                    SRV_ERR("%s", "LLAMA_PACKED_GDN_TREE requires --parallel 1 and --kv-unified\n");
++                    return false;
++                }
++                if (transactional_gdn == nullptr || atoi(transactional_gdn) == 0) {
++                    SRV_ERR("%s", "LLAMA_PACKED_GDN_TREE requires LLAMA_GDN_TRANSACTIONAL_REPLAY=1\n");
++                    return false;
++                }
++                if (!spec) {
++                    SRV_ERR("%s", "LLAMA_PACKED_GDN_TREE requires speculative decoding\n");
++                    return false;
++                }
++                SRV_WRN("LLAMA_PACKED_GDN_TREE enabled: at most %d probability-ranked rank-2/3 leaves share one exact target graph\n",
++                        packed_gdn_tree_max_leaves);
++            }
++        }
++
++        {
++            const char * LLAMA_BVF_BRANCH = getenv("LLAMA_BVF_BRANCH");
++            const char * LLAMA_BVF_BRANCH_ADOPT = getenv("LLAMA_BVF_BRANCH_ADOPT");
++            bvf_branch = LLAMA_BVF_BRANCH ? atoi(LLAMA_BVF_BRANCH) != 0 : false;
++            bvf_branch_adopt = LLAMA_BVF_BRANCH_ADOPT ? atoi(LLAMA_BVF_BRANCH_ADOPT) != 0 : true;
++
++            if (bvf_branch) {
++                if (packed_gdn_tree) {
++                    SRV_ERR("%s", "LLAMA_BVF_BRANCH and LLAMA_PACKED_GDN_TREE are mutually exclusive\n");
++                    return false;
++                }
++                if (params_base.n_parallel < 2 || !params_base.kv_unified) {
++                    SRV_ERR("%s", "LLAMA_BVF_BRANCH requires --parallel 2 and --kv-unified\n");
++                    return false;
++                }
++                SRV_WRN("%s", "LLAMA_BVF_BRANCH enabled: slot 1 is reserved for rank-2 verification\n");
++                if (!bvf_branch_adopt) {
++                    SRV_WRN("%s", "LLAMA_BVF_BRANCH_ADOPT disabled: verification-only control\n");
++                }
++            }
++        }
++
++        {
++            const char * LLAMA_SPEC_PROFILE = getenv("LLAMA_SPEC_PROFILE");
++            spec_profile = LLAMA_SPEC_PROFILE ? atoi(LLAMA_SPEC_PROFILE) != 0 : false;
++            if (spec_profile) {
++                SRV_WRN("%s", "LLAMA_SPEC_PROFILE enabled: logging speculative phase timings\n");
++            }
++        }
++
+         {
+             const char * LLAMA_SERVER_SLOTS_DEBUG = getenv("LLAMA_SERVER_SLOTS_DEBUG");
+             slots_debug = LLAMA_SERVER_SLOTS_DEBUG ? atoi(LLAMA_SERVER_SLOTS_DEBUG) : 0;
+@@ -1263,7 +1371,7 @@ private:
+         {
+             const int32_t n_batch = llama_n_batch(ctx_tgt);
+             const int32_t n_embd  = llama_model_n_embd_inp(model_tgt);
+-            batch.init(std::max(n_batch, params_base.n_parallel), n_embd);
++            batch.init(std::max(n_batch, params_base.n_parallel), n_embd, packed_gdn_tree ? 32 : 1);
+         }
+ 
+         if (params_base.cache_ram_mib != 0) {
+@@ -1541,6 +1649,19 @@ private:
+         }
+ 
+         if (ret) {
++            const char * compact_gdn_env = std::getenv("LLAMA_COMPACT_GDN_ROLLBACK");
++            const char * transactional_gdn_env = std::getenv("LLAMA_GDN_TRANSACTIONAL_REPLAY");
++            if ((compact_gdn_env != nullptr && std::atoi(compact_gdn_env) != 0) ||
++                    (transactional_gdn_env != nullptr && std::atoi(transactional_gdn_env) != 0)) {
++                // The compact factor buffer is not checkpointed yet.  Clear an
++                // idle slot before prompt-cache selection so no restored prompt
++                // can be paired with factors from the preceding request.
++                if (ret->prompt.n_tokens() > 0) {
++                    ret->prompt_clear();
++                }
++                update_cache = false;
++            }
++
+             update_cache = update_cache && prompt_cache;
+ 
+             // cache prompts only for completion tasks
+@@ -2718,7 +2839,13 @@ private:
+         try {
+             scoped_timer t(t_pre_decode, n_pre_decode);
+             pre_decode();
++            if (packed_gdn_tree && !batch.tokens.empty() && batch.tokens.front().seq_ids.size() > 1) {
++                SRV_DBG("packed tree pre_decode complete: tokens=%d\n", batch.size());
++            }
+             batch.render();
++            if (packed_gdn_tree && batch.size() > 0 && batch.batch.n_seq_id[0] > 1) {
++                SRV_DBG("%s", "packed tree batch render complete\n");
++            }
+         } catch (const std::exception & e) {
+             SRV_ERR("pre_decode() failed: %s\n", e.what());
+             abort_all_slots("pre_decode() failed: " + std::string(e.what()));
+@@ -2916,6 +3043,7 @@ private:
+                             /* .id_last  = */ slot.sampled,
+                             /* .prompt   = */ &slot.spec_prompt,
+                             /* .result   = */ &slot.spec_draft,
++                            /* .alternatives = */ &slot.spec_alternatives,
+                         };
+ 
+                         drafting.push_back(&slot);
+@@ -2926,9 +3054,14 @@ private:
+ 
+         // generate the actual drafts (if any)
+         if (!drafting.empty()) {
++            const int64_t t_spec_draft_start = spec_profile ? ggml_time_us() : 0;
+             queue_tasks.yield_to_queue([&]() {
+                 common_speculative_draft(spec.get());
+             });
++            if (spec_profile) {
++                SRV_INF("SPEC_PROFILE phase=draft us=%" PRId64 " slots=%zu\n",
++                        ggml_time_us() - t_spec_draft_start, drafting.size());
++            }
+         }
+ 
+         // make checkpoints if needed
+@@ -2938,6 +3071,12 @@ private:
+ 
+             slot.stats.n_draft_tokens += draft.size();
+ 
++            for (const auto & alternative : slot.spec_alternatives) {
++                SLT_DBG(slot, "BVF alternative: pos=%d rank=%d token=%d conditional=%.9f path=%.9f\n",
++                        alternative.position, alternative.rank, alternative.token,
++                        alternative.conditional_probability, alternative.path_probability);
++            }
++
+             // TODO: avoid restoring the draft context and re-evaluating the drafted tokens when not needed [TAG_SPEC_AVOID_DRAFT_REEVAL]
+             const bool use_ckpt_dft = ctx_dft_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL;
+ 
+@@ -2979,9 +3118,160 @@ private:
+             }
+         });
+ 
++        // Experimental branch-verification probe. The normal slot keeps the
++        // greedy MTP chain while sequence 1 evaluates the rank-2 token at the
++        // first draft position. The target sampler still decides whether the
++        // branch is valid; the ordinary chain remains the exact fallback.
++        if (bvf_branch) {
++            iterate(drafting, [&](server_slot & slot) {
++                slot.spec_branch_seq_id = -1;
++                slot.spec_branch_i_batch = -1;
++                slot.spec_branch_pos = -1;
++                slot.spec_branch_token = LLAMA_TOKEN_NULL;
++
++                if (slot.id != 0 || slots.size() < 2 || slots[1].is_processing()) {
++                    return;
++                }
++
++                const auto alternative = std::find_if(
++                    slot.spec_alternatives.begin(), slot.spec_alternatives.end(),
++                    [](const common_speculative_alternative & item) {
++                        return item.position == 0 && item.rank == 2;
++                    });
++                if (alternative == slot.spec_alternatives.end()) {
++                    return;
++                }
++
++                std::vector<uint8_t> state;
++                if (!common_speculative_get_state(spec.get(), slot.id, state)) {
++                    return;
++                }
++
++                constexpr llama_seq_id branch_seq_id = 1;
++                slot.mem.seq_rm(branch_seq_id, -1, -1);
++                slot.mem.seq_cp(slot.id, branch_seq_id, -1, -1);
++                common_speculative_set_state(spec.get(), branch_seq_id, state);
++
++                slot.spec_branch_seq_id = branch_seq_id;
++                slot.spec_branch_pos = slot.prompt.tokens.pos_next();
++                slot.spec_branch_token = alternative->token;
++            });
++        }
++
+         // update the batch with the sampled/drafted tokens
+         iterate(generating, [&](server_slot & slot) {
+-            slot.handle_last_sampled_token(batch);
++            bool built_packed_tree = false;
++            if (packed_gdn_tree && !slot.spec_draft.empty()) {
++                SLT_DBG(slot, "building packed tree: draft=%zu alternatives=%zu\n",
++                        slot.spec_draft.size(), slot.spec_alternatives.size());
++                GGML_ASSERT(slot.id == 0);
++                GGML_ASSERT(slot.spec_i_batch.empty());
++
++                slot.spec_tree_leaves.clear();
++                slot.spec_tree_seq_ids.clear();
++
++                const size_t n_main_nodes = slot.spec_draft.size() + 1;
++                llama_seq_id next_seq_id = 2; // seq 1 is the full-main sentinel
++                std::vector<const common_speculative_alternative *> ranked_alternatives;
++                ranked_alternatives.reserve(slot.spec_alternatives.size());
++                for (const auto & alternative : slot.spec_alternatives) {
++                    if (alternative.position < 0 ||
++                            (size_t) alternative.position >= slot.spec_draft.size() ||
++                            (alternative.rank != 2 && alternative.rank != 3)) {
++                        continue;
++                    }
++                    ranked_alternatives.push_back(&alternative);
++                }
++                std::stable_sort(ranked_alternatives.begin(), ranked_alternatives.end(),
++                        [](const auto * a, const auto * b) {
++                            return a->path_probability > b->path_probability;
++                        });
++
++                const size_t leaf_budget = std::min({
++                        ranked_alternatives.size(),
++                        (size_t) packed_gdn_tree_max_leaves,
++                        (size_t) (32 - n_main_nodes),
++                });
++                for (size_t i = 0; i < leaf_budget; ++i) {
++                    const auto & alternative = *ranked_alternatives[i];
++                    slot.spec_tree_leaves.push_back({
++                        /* .position = */ alternative.position,
++                        /* .token    = */ alternative.token,
++                        /* .seq_id   = */ next_seq_id++,
++                        /* .i_batch  = */ -1,
++                        /* .pos      = */ -1,
++                    });
++                }
++
++                if (!slot.spec_tree_leaves.empty()) {
++                    SLT_DBG(slot, "packed tree selected leaves=%zu\n", slot.spec_tree_leaves.size());
++                    const llama_pos pos0 = slot.prompt.tokens.pos_next();
++                    constexpr llama_seq_id main_sentinel = 1;
++
++                    slot.spec_tree_seq_ids.push_back(main_sentinel);
++                    slot.mem.seq_rm(main_sentinel, -1, -1);
++                    slot.mem.seq_cp(slot.id, main_sentinel, -1, pos0);
++                    for (const auto & leaf : slot.spec_tree_leaves) {
++                        slot.spec_tree_seq_ids.push_back(leaf.seq_id);
++                        slot.mem.seq_rm(leaf.seq_id, -1, -1);
++                        slot.mem.seq_cp(slot.id, leaf.seq_id, -1, pos0);
++                    }
++                    SLT_DBG(slot, "%s", "packed tree virtual prefixes prepared\n");
++
++                    bool add_ok = true;
++                    for (size_t depth = 0; depth < n_main_nodes; ++depth) {
++                        std::vector<llama_seq_id> seq_ids = { slot.id, main_sentinel };
++                        for (const auto & leaf : slot.spec_tree_leaves) {
++                            if ((int32_t) depth <= leaf.position) {
++                                seq_ids.push_back(leaf.seq_id);
++                            }
++                        }
++
++                        const llama_token token = depth == 0 ? slot.sampled : slot.spec_draft[depth - 1];
++                        slot.spec_i_batch.push_back(batch.size());
++                        add_ok &= batch.add_tree(
++                                slot.id, token, pos0 + (llama_pos) depth, seq_ids, true, false);
++                    }
++
++                    for (auto & leaf : slot.spec_tree_leaves) {
++                        leaf.i_batch = batch.size();
++                        leaf.pos = pos0 + leaf.position + 1;
++                        add_ok &= batch.add_tree(
++                                slot.id, leaf.token, leaf.pos, { leaf.seq_id }, true, false);
++                    }
++                    SLT_DBG(slot, "packed tree rows assembled: total=%zu\n",
++                            n_main_nodes + slot.spec_tree_leaves.size());
++
++                    GGML_ASSERT(add_ok && "batch must be large enough to hold the packed verification tree");
++                    slot.prompt.tokens.push_back(slot.sampled);
++                    slot.prompt.tokens.insert(slot.spec_draft);
++                    built_packed_tree = true;
++
++                    SLT_DBG(slot, "packed verification tree: main=%zu leaves=%zu total=%zu\n",
++                            n_main_nodes, slot.spec_tree_leaves.size(),
++                            n_main_nodes + slot.spec_tree_leaves.size());
++                }
++            }
++
++            if (!built_packed_tree) {
++                slot.handle_last_sampled_token(batch);
++            }
++
++            if (slot.spec_branch_seq_id >= 0) {
++                bool add_ok = true;
++                add_ok &= batch.add(slot.spec_branch_seq_id, slot.sampled, slot.spec_branch_pos, true, false);
++                slot.spec_branch_i_batch = batch.size();
++                add_ok &= batch.add(slot.spec_branch_seq_id, slot.spec_branch_token, slot.spec_branch_pos + 1, true, false);
++                for (size_t i = 2; i <= slot.spec_draft.size(); ++i) {
++                    add_ok &= batch.add(
++                        slot.spec_branch_seq_id,
++                        slot.spec_branch_token,
++                        slot.spec_branch_pos + (llama_pos) i,
++                        true,
++                        false);
++                }
++                GGML_ASSERT(add_ok && "batch must be large enough to hold the BVF branch");
++            }
+         });
+ 
+         // process in chunks of params.n_batch
+@@ -3028,6 +3318,20 @@ private:
+ 
+                         slot.state = SLOT_STATE_PROCESSING_PROMPT;
+ 
++                        // Compact GDN rollback factors are not part of the
++                        // server's prompt checkpoints yet.  Reusing a retained
++                        // recurrent slot would pair a restored S state with
++                        // stale factors, so keep the experimental mode correct
++                        // by starting each independent request from an empty
++                        // slot.  In-request speculative rollback is unchanged.
++                        const char * compact_gdn_env = std::getenv("LLAMA_COMPACT_GDN_ROLLBACK");
++                        const char * transactional_gdn_env = std::getenv("LLAMA_GDN_TRANSACTIONAL_REPLAY");
++                        if (((compact_gdn_env != nullptr && std::atoi(compact_gdn_env) != 0) ||
++                                (transactional_gdn_env != nullptr && std::atoi(transactional_gdn_env) != 0)) &&
++                                slot.prompt.n_tokens() > 0) {
++                            slot.prompt_clear();
++                        }
++
+                         SLT_TRC(slot, "new prompt, n_ctx_slot = %d, n_keep = %d, task.n_tokens = %d\n",
+                                 slot.n_ctx, slot.task->params.n_keep, slot.task->n_tokens());
+ 
+@@ -3562,12 +3866,17 @@ private:
+         // yield to the queue, so we can still handle metrics tasks while decoding
+         // note: the sync is done here too, so that the wait is also covered by the yield
+         int ret = 0;
++        const int64_t t_spec_target_start = spec_profile ? ggml_time_us() : 0;
+         queue_tasks.yield_to_queue([&]() {
+             ret = llama_decode(ctx_tgt, batch_view);
+             if (ret == 0 && has_output) {
+                 llama_synchronize(ctx_tgt);
+             }
+         });
++        if (spec_profile) {
++            SRV_INF("SPEC_PROFILE phase=target us=%" PRId64 " tokens=%d output=%d\n",
++                    ggml_time_us() - t_spec_target_start, batch_view.n_tokens, has_output ? 1 : 0);
++        }
+ 
+         if (ret != 0) {
+             {
+@@ -3627,9 +3936,35 @@ private:
+         //       ref: https://github.com/ggml-org/llama.cpp/pull/22728#issuecomment-4400925384
+         if (spec) {
+             bool ok = true;
++            const int64_t t_spec_process_start = spec_profile ? ggml_time_us() : 0;
++            llama_batch spec_batch_view = batch_view;
++            std::vector<int32_t> spec_n_seq_id;
++            std::vector<llama_seq_id *> spec_seq_id;
++            llama_seq_id spec_seq_zero = 0;
++            if (packed_gdn_tree) {
++                for (const auto & slot : slots) {
++                    if (slot.spec_tree_leaves.empty()) {
++                        continue;
++                    }
++                    GGML_ASSERT(!slot.spec_i_batch.empty());
++                    GGML_ASSERT(slot.spec_i_batch.front() == off);
++                    GGML_ASSERT((int32_t) slot.spec_i_batch.size() <= batch_view.n_tokens);
++
++                    spec_batch_view.n_tokens = (int32_t) slot.spec_i_batch.size();
++                    spec_n_seq_id.assign(spec_batch_view.n_tokens, 1);
++                    spec_seq_id.assign(spec_batch_view.n_tokens, &spec_seq_zero);
++                    spec_batch_view.n_seq_id = spec_n_seq_id.data();
++                    spec_batch_view.seq_id = spec_seq_id.data();
++                    break;
++                }
++            }
+             queue_tasks.yield_to_queue([&]() {
+-                ok = common_speculative_process(spec.get(), batch_view);
++                ok = common_speculative_process(spec.get(), spec_batch_view);
+             });
++            if (spec_profile) {
++                SRV_INF("SPEC_PROFILE phase=process us=%" PRId64 " tokens=%d\n",
++                        ggml_time_us() - t_spec_process_start, batch_view.n_tokens);
++            }
+ 
+             if (!ok) {
+                 SRV_ERR("%s", "failed to process speculative batch\n");
+@@ -3793,6 +4128,13 @@ private:
+             // verify and try to accept the draft
+             {
+                 common_sampler_ptr smpl_save(common_sampler_clone(slot.smpl.get()));
++                auto clear_packed_tree = [&]() {
++                    for (const llama_seq_id seq_id : slot.spec_tree_seq_ids) {
++                        slot.mem.seq_rm(seq_id, -1, -1);
++                    }
++                    slot.spec_tree_seq_ids.clear();
++                    slot.spec_tree_leaves.clear();
++                };
+ 
+                 GGML_ASSERT(slot.spec_i_batch.size() == n_draft + 1);
+                 auto accepted = common_sampler_sample_and_accept_n(slot.smpl.get(), slot.ctx_tgt, slot.spec_i_batch, slot.spec_draft);
+@@ -3800,17 +4142,61 @@ private:
+ 
+                 GGML_ASSERT(accepted.size() >= 1);
+ 
+-                const uint32_t n_rollback = slot.spec_draft.size() + 1 - accepted.size();
++                const size_t n_main_accepted = accepted.size() - 1;
++                bool tree_hit = false;
++                server_slot::packed_tree_leaf * selected_leaf = nullptr;
++                if (packed_gdn_tree && !slot.spec_tree_leaves.empty()) {
++                    const auto leaf = std::find_if(
++                            slot.spec_tree_leaves.begin(), slot.spec_tree_leaves.end(),
++                            [&](const server_slot::packed_tree_leaf & item) {
++                                return item.position == (int32_t) n_main_accepted &&
++                                        item.token == accepted.back();
++                            });
++                    if (leaf != slot.spec_tree_leaves.end()) {
++                        selected_leaf = &*leaf;
++                        GGML_ASSERT(is_inside_view(selected_leaf->i_batch));
++                        const int leaf_idx = selected_leaf->i_batch - off;
++                        const llama_token id_next = common_sampler_sample(
++                                slot.smpl.get(), slot.ctx_tgt, leaf_idx);
++                        common_sampler_accept(slot.smpl.get(), id_next, true);
++                        accepted.push_back(id_next);
++
++                        // Empty-range copy marks the selected recurrent-tree node.
++                        // The following real copy adopts only the leaf's attention KV.
++                        slot.mem.seq_cp(selected_leaf->seq_id, slot.id,
++                                selected_leaf->pos, selected_leaf->pos);
++                        slot.mem.seq_rm(slot.id, selected_leaf->pos, -1);
++                        slot.mem.seq_cp(selected_leaf->seq_id, slot.id,
++                                selected_leaf->pos, selected_leaf->pos + 1);
++                        tree_hit = true;
++                        SLT_DBG(slot, "packed tree leaf accepted: pos=%d token=%d next=%d\n",
++                                selected_leaf->position, selected_leaf->token, id_next);
++                    }
++                }
++                bool branch_hit = false;
++                if (bvf_branch_adopt && slot.spec_branch_seq_id >= 0 &&
++                        n_main_accepted == 0 &&
++                        accepted.back() == slot.spec_branch_token) {
++                    GGML_ASSERT(is_inside_view(slot.spec_branch_i_batch));
++                    const int branch_idx = slot.spec_branch_i_batch - off;
++                    const llama_token id_next = common_sampler_sample(slot.smpl.get(), slot.ctx_tgt, branch_idx);
++                    common_sampler_accept(slot.smpl.get(), id_next, true);
++                    accepted.push_back(id_next);
++                    branch_hit = true;
++                    SLT_DBG(slot, "BVF branch accepted: token=%d next=%d\n", slot.spec_branch_token, id_next);
++                }
++
++                const uint32_t n_rollback = slot.spec_draft.size() - n_main_accepted;
+ 
+                 const bool use_ckpt_tgt =
+                     ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL ||
+                     (ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS && n_rollback > llama_n_rs_seq(ctx_tgt));
+ 
+                 // check for partial draft acceptance
+-                if (n_rollback > 0) {
++                if (n_rollback > 0 && !branch_hit && !tree_hit) {
+                     if (use_ckpt_tgt) {
+                         if (trace > 0) {
+-                            SLT_INF(slot, "accepted %2zu/%2zu draft tokens (restore checkpoint)\n", accepted.size() - 1, slot.spec_draft.size());
++                            SLT_INF(slot, "accepted %2zu/%2zu draft tokens (restore checkpoint)\n", n_main_accepted, slot.spec_draft.size());
+                         }
+ 
+                         // partial acceptance is not supported by the context -> truncate the draft and restore the state
+@@ -3832,15 +4218,51 @@ private:
+                         slot.prompt.tokens.keep_first(ckpt.n_tokens);
+                         common_sampler_copy(smpl_save.get(), slot.smpl.get());
+ 
++                        if (slot.spec_branch_seq_id >= 0) {
++                            slot.mem.seq_rm(slot.spec_branch_seq_id, -1, -1);
++                            slot.spec_branch_seq_id = -1;
++                            slot.spec_branch_i_batch = -1;
++                            slot.spec_branch_pos = -1;
++                            slot.spec_branch_token = LLAMA_TOKEN_NULL;
++                        }
++
++                        clear_packed_tree();
++
+                         return;
+                     }
+                 }
+ 
+                 if (trace > 0) {
+-                    SLT_INF(slot, "accepted %2zu/%2zu draft tokens\n", accepted.size() - 1, n_draft);
++                    SLT_INF(slot, "accepted %2zu/%2zu draft tokens%s%s\n",
++                            n_main_accepted, n_draft,
++                            branch_hit ? " + BVF branch" : "",
++                            tree_hit ? " + packed leaf" : "");
++                }
++
++                common_speculative_accept(spec.get(), slot.id, n_main_accepted);
++
++                if (slot.spec_branch_seq_id >= 0) {
++                    if (branch_hit) {
++                        std::vector<uint8_t> state;
++                        common_speculative_select_state(spec.get(), slot.spec_branch_seq_id, 1);
++                        if (!common_speculative_get_state(spec.get(), slot.spec_branch_seq_id, state)) {
++                            throw std::runtime_error("failed to read BVF speculative state");
++                        }
++
++                        slot.mem.seq_rm(slot.spec_branch_seq_id, slot.spec_branch_pos + 2, -1);
++                        slot.mem.seq_rm(slot.id, -1, -1);
++                        slot.mem.seq_cp(slot.spec_branch_seq_id, slot.id, -1, -1);
++                        common_speculative_set_state(spec.get(), slot.id, state);
++                    }
++
++                    slot.mem.seq_rm(slot.spec_branch_seq_id, -1, -1);
++                    slot.spec_branch_seq_id = -1;
++                    slot.spec_branch_i_batch = -1;
++                    slot.spec_branch_pos = -1;
++                    slot.spec_branch_token = LLAMA_TOKEN_NULL;
+                 }
+ 
+-                common_speculative_accept(spec.get(), slot.id, accepted.size() - 1);
++                clear_packed_tree();
+ 
+                 slot.spec_draft = std::move(accepted);
+             }

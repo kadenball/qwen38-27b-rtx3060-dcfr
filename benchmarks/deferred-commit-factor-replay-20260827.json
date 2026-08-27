@@ -1,0 +1,77 @@
+{
+  "date": "2026-08-27",
+  "hardware": "NVIDIA GeForce RTX 3060 12GB",
+  "model": "Qwen3.8-27B-UD-IQ3_XXS.gguf",
+  "allocated_context_tokens": 65536,
+  "kv_type": "q4_0",
+  "algorithm": {
+    "name": "Deferred-Commit Factor Replay",
+    "environment": "LLAMA_GDN_TRANSACTIONAL_REPLAY=1",
+    "description": "Keep one committed GDN state plane. Store per-token gate/key/delta factors and reconstruct only the accepted prefix before the next verification batch instead of materializing a candidate state plane."
+  },
+  "correctness": {
+    "fixed_placement_128_token_responses_exact": "3/3",
+    "fixed_placement_512_token_response_exact": true,
+    "claim": "target output exact in tested deterministic generations; internal draft counts can differ"
+  },
+  "memory_mib": {
+    "ordinary_mtp4_process": 10080,
+    "deferred_commit_mtp4_process": 9706,
+    "saving": 374
+  },
+  "mtp4_512_token_ab": {
+    "ordinary_tokens_per_second": 13.797875,
+    "deferred_commit_tokens_per_second": 14.961986,
+    "speedup_percent": 8.44,
+    "output_exact": true
+  },
+  "mtp6_ngl50": {
+    "no_persistent_weight_cache": {
+      "tokens_per_second": [21.959359277768776, 17.021931351221017],
+      "process_vram_mib": 10224,
+      "gpu_free_mib": 713
+    },
+    "persistent_layers_15_16": {
+      "tokens_per_second": [22.424331565107103, 17.35561867655891],
+      "target_mean_milliseconds": [192.652, 190.951],
+      "process_vram_mib": 10314,
+      "gpu_free_mib": 623,
+      "outputs_equal_to_reference": true
+    },
+    "persistent_layers_13_to_16": {
+      "tokens_per_second": [23.368600292604317, 17.968292613220758],
+      "target_mean_milliseconds": [183.911, 183.363],
+      "process_vram_mib_before_generation": 10492,
+      "gpu_free_mib_before_generation": 445,
+      "outputs_equal_to_reference": true,
+      "status": "fastest exact-output research configuration; VRAM margin too small for default desktop use"
+    }
+  },
+  "rejected": {
+    "mtp8": {
+      "tokens_per_second": [16.68238138235729, 17.196077940207747],
+      "gpu_used_mib": 11477,
+      "gpu_free_mib": 413,
+      "reason": "lower acceptance, higher memory use, and deterministic output drift"
+    },
+    "forced_cublas": {
+      "cache2_tokens_per_second": [23.67948198988942, 18.30492634573278],
+      "cache4_tokens_per_second": [24.518633582342257, 17.857612397851295],
+      "reason": "target phase latency did not materially improve; different FP reduction order changed output and speculative acceptance"
+    },
+    "persistent_layers_14_to_16": {
+      "tokens_per_second": [22.850653168827822, 17.683926410916246],
+      "gpu_free_mib_after_generation": 337,
+      "reason": "slower than the four-layer layout and unsafe VRAM margin"
+    }
+  },
+  "throughput_boundary": {
+    "mtp6_target_batch_tokens": 7,
+    "draft_phase_milliseconds": 22,
+    "fastest_exact_target_phase_milliseconds": 183.4,
+    "perfect_acceptance_ceiling_tokens_per_second": 34.1,
+    "effective_acceptance_needed_for_30_tokens_per_second_percent": 87,
+    "measured_peak_exact_tokens_per_second": 23.368600292604317,
+    "next_required_algorithm": "ragged packed recurrent verification forest"
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "experiment": "Transactional Factor Replay (TFR)",
+  "date": "2026-08-27",
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 3060 12 GB"
+  },
+  "model": "models/qwen3.8-27b-ud-iq3-xxs/Qwen3.8-27B-UD-IQ3_XXS.gguf",
+  "context_size": 65536,
+  "fixed_gpu_layers": 46,
+  "ordinary_mtp3": {
+    "process_vram_mib": 9974,
+    "tokens_per_second": [
+      16.839983690409497,
+      15.717117624185649,
+      14.749310498768258
+    ],
+    "mean_tokens_per_second": 15.768803937787801,
+    "draft_tokens": 338,
+    "accepted_draft_tokens": 266
+  },
+  "transactional_mtp3": {
+    "process_vram_mib": 9798,
+    "tokens_per_second": [
+      17.25614284716574,
+      16.24478408123722,
+      15.153670147317536
+    ],
+    "mean_tokens_per_second": 16.218199025240164,
+    "draft_tokens": 338,
+    "accepted_draft_tokens": 266,
+    "exact_outputs": 3,
+    "tested_outputs": 3
+  },
+  "transactional_mtp4": {
+    "tokens_per_second": [
+      18.84345127751181,
+      17.374504433303176,
+      16.131822649536282
+    ],
+    "mean_tokens_per_second": 17.44992612011709,
+    "draft_tokens": 396,
+    "accepted_draft_tokens": 280,
+    "exact_outputs_vs_mtp3": 3,
+    "tested_outputs": 3,
+    "selected_experimental_depth": true
+  },
+  "transactional_mtp5": {
+    "tokens_per_second": [
+      18.995397729227335,
+      17.11494111449532,
+      15.620289698566538
+    ],
+    "mean_tokens_per_second": 17.243542847429733,
+    "draft_tokens": 466,
+    "accepted_draft_tokens": 285,
+    "exact_outputs_vs_mtp3": 3,
+    "tested_outputs": 3
+  },
+  "transactional_mtp4_fit_512": {
+    "selected_gpu_layers": 48,
+    "process_vram_mib": 10098,
+    "tokens_per_second": [
+      19.87016800931113,
+      17.24016224757416,
+      14.68776075835106
+    ],
+    "mean_tokens_per_second": 17.26603033841212,
+    "note": "Different layer placement changed floating-point execution and therefore acceptance on this small suite; it did not improve the mean."
+  },
+  "rejected": {
+    "mtp4_p_min_0_5_mean_tokens_per_second": 14.599009917204912,
+    "reason": "Short, confidence-gated target batches lost operation-offload amortization and changed batch-shape numerics."
+  },
+  "conclusion": "TFR is bit-exact against ordinary rollback at fixed placement, saves 176 MiB process VRAM, and improves fixed MTP3 decode by 2.85%. Its two-state-plane layout makes MTP4 practical; MTP4 raises the suite mean to 17.45 tok/s but does not reach the 30 tok/s target."
+}

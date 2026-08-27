@@ -1,0 +1,31 @@
+0.00.101.274 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.101.358 I srv          init: The UI is disabled
+0.00.101.359 I srv          init: Use --ui/--no-ui (or deprecated --webui/--no-webui) to enable/disable
+0.00.102.719 I srv    load_model: loading model '<repository>/models/qwen3.8-27b-ud-iq3-xxs/Qwen3.8-27B-UD-IQ3_XXS.gguf'
+0.05.016.636 W resolve_fused_ops: layer 0 is assigned to device CPU but fused Gated Delta Net (chunked) is assigned to device CUDA0 (usually due to missing support)
+0.05.016.639 W resolve_fused_ops: fused Gated Delta Net (chunked) not supported, set to disabled
+0.05.050.725 I cmn          init: llama threadpool init, n_threads = 6
+0.05.270.677 I common_speculative_init_result: creating MTP draft context against the target model '<repository>/models/qwen3.8-27b-ud-iq3-xxs/Qwen3.8-27B-UD-IQ3_XXS.gguf'
+0.05.499.688 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 65536, kv_unified = 'false'
+0.05.537.153 I srv          init: chat template supports preserving reasoning, consider enabling it via --reasoning-preserve
+0.05.537.188 I srv  llama_server: model loaded
+0.05.537.192 I srv  llama_server: listening on http://127.0.0.1:8091
+0.24.439.652 I slot get_availabl: id  0 | task -1 | selected slot by LRU, t_last = -1
+0.24.439.686 I slot launch_slot_: id  0 | task 0 | processing task, is_child = 0
+0.32.620.429 I slot print_timing: id  0 | task 0 | n_gen =    100, tg =  13.17 t/s, tg_3s =  13.30 t/s
+0.35.807.743 I slot print_timing: id  0 | task 0 | n_gen =    145, tg =  13.45 t/s, tg_3s =  14.12 t/s
+0.38.991.093 I slot print_timing: id  0 | task 0 | n_gen =    190, tg =  13.61 t/s, tg_3s =  14.14 t/s
+0.42.200.024 I slot print_timing: id  0 | task 0 | n_gen =    242, tg =  14.10 t/s, tg_3s =  16.20 t/s
+0.45.401.190 I slot print_timing: id  0 | task 0 | n_gen =    288, tg =  14.14 t/s, tg_3s =  14.37 t/s
+0.48.592.655 I slot print_timing: id  0 | task 0 | n_gen =    331, tg =  14.05 t/s, tg_3s =  13.47 t/s
+0.51.778.234 I slot print_timing: id  0 | task 0 | n_gen =    381, tg =  14.25 t/s, tg_3s =  15.70 t/s
+0.54.969.879 I slot print_timing: id  0 | task 0 | n_gen =    427, tg =  14.26 t/s, tg_3s =  14.41 t/s
+0.58.171.958 I slot print_timing: id  0 | task 0 | n_gen =    467, tg =  14.09 t/s, tg_3s =  12.49 t/s
+1.01.367.028 I slot print_timing: id  0 | task 0 | n_gen =    505, tg =  13.90 t/s, tg_3s =  11.89 t/s
+1.02.139.004 I slot print_timing: id  0 | task 0 | prompt eval time =     664.61 ms /    56 tokens (   11.87 ms per token,    84.26 tokens per second)
+1.02.139.006 I slot print_timing: id  0 | task 0 |        eval time =   37034.69 ms /   512 tokens (   72.47 ms per token,    13.80 tokens per second)
+1.02.139.007 I slot print_timing: id  0 | task 0 |       total time =   37699.30 ms /   568 tokens
+1.02.139.010 I slot print_timing: id  0 | task 0 |    graphs reused =        158
+1.02.139.013 I slot print_timing: id  0 | task 0 | draft acceptance = 0.54121 (  348 accepted /   643 generated), mean len =  3.15
+1.02.139.053 I slot      release: id  0 | task 0 | stop processing: n_tokens = 567, truncated = 0
+1.17.586.571 I srv    operator(): operator(): cleaning up before exit...

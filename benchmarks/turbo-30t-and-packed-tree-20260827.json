@@ -1,0 +1,49 @@
+{
+  "date": "2026-08-27",
+  "hardware": "NVIDIA GeForce RTX 3060 12GB",
+  "model": "Qwen3.8-27B-UD-IQ3_XXS.gguf",
+  "context_tokens_allocated": 65536,
+  "kv_type": "q4_0",
+  "memory_algorithm": {
+    "name": "Deferred-Commit Factor Replay",
+    "environment": "LLAMA_GDN_TRANSACTIONAL_REPLAY=1",
+    "mtp4_memory_saving_mib": 374,
+    "deterministic_output_exact": true
+  },
+  "packed_tree": {
+    "environment": "LLAMA_PACKED_GDN_TREE=1",
+    "correctness": "byte-identical output on tested deterministic prompts",
+    "linear_64k_tokens_per_second": 25.32769452873629,
+    "exhaustive_tree_64k_tokens_per_second": 23.157780779922803,
+    "sparse_two_leaf_64k_tokens_per_second": 23.909716908951797,
+    "status": "optional research mode; rejected as the default for high-acceptance MTP"
+  },
+  "turbo_profile": {
+    "launcher": "scripts/serve_qwen38_27b_iq3_64k_turbo.sh",
+    "selector_name": "qwen3.8-27b-ud-iq3-xxs-64k-turbo-30t",
+    "mtp_depth": 6,
+    "batch": 16,
+    "ubatch": 16,
+    "n_gpu_layers": 50,
+    "cuda_override_blocks": [10, 11, 12, 13, 14, 15, 16],
+    "coding_tokens_per_second": [29.650984267151365, 29.694462201408975],
+    "coding_draft": {
+      "generated": 168,
+      "accepted": 139
+    },
+    "predictable_tokens_per_second": [32.777474496875406, 33.206731043449246],
+    "predictable_draft": {
+      "generated": 233,
+      "accepted": 216
+    },
+    "post_graph_free_vram_mib": 105,
+    "depth1_control_coding_output_exact": true,
+    "claim": "30+ tok/s demonstrated at 64K allocation on high-acceptance output; fixed coding workload is approximately 29.7 tok/s"
+  },
+  "rejected": {
+    "cpu_threads_8_tokens_per_second": 29.35342860651891,
+    "physical_core_pinning_tokens_per_second": 29.272700889746435,
+    "eighth_resident_layer": "unsafe VRAM margin",
+    "mtp0_batch16": "libggml-cpu startup segfault in this research fork"
+  }
+}

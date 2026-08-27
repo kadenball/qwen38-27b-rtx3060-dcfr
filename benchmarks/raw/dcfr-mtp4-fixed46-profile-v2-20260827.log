@@ -1,0 +1,1376 @@
+0.00.187.754 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.187.839 I srv          init: The UI is disabled
+0.00.187.840 I srv          init: Use --ui/--no-ui (or deprecated --webui/--no-webui) to enable/disable
+0.00.189.169 I srv    load_model: loading model '<repository>/models/qwen3.8-27b-ud-iq3-xxs/Qwen3.8-27B-UD-IQ3_XXS.gguf'
+0.05.476.599 W resolve_fused_ops: layer 0 is assigned to device CPU but fused Gated Delta Net (chunked) is assigned to device CUDA0 (usually due to missing support)
+0.05.476.602 W resolve_fused_ops: fused Gated Delta Net (chunked) not supported, set to disabled
+0.05.520.603 I cmn          init: llama threadpool init, n_threads = 6
+0.05.738.887 I common_speculative_init_result: creating MTP draft context against the target model '<repository>/models/qwen3.8-27b-ud-iq3-xxs/Qwen3.8-27B-UD-IQ3_XXS.gguf'
+0.05.965.634 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 65536, kv_unified = 'false'
+0.05.997.599 W srv    load_model: LLAMA_SPEC_PROFILE enabled: logging speculative phase timings
+0.06.002.026 I srv          init: chat template supports preserving reasoning, consider enabling it via --reasoning-preserve
+0.06.002.069 I srv  llama_server: model loaded
+0.06.002.072 I srv  llama_server: listening on http://127.0.0.1:8091
+0.23.367.245 I slot get_availabl: id  0 | task -1 | selected slot by LRU, t_last = -1
+0.23.367.292 I slot launch_slot_: id  0 | task 0 | processing task, is_child = 0
+0.23.719.040 I srv        decode: SPEC_PROFILE phase=target us=351658 tokens=55 output=0
+0.23.775.254 I srv        decode: SPEC_PROFILE phase=process us=56209 tokens=55
+0.24.033.523 I srv        decode: SPEC_PROFILE phase=target us=195158 tokens=4 output=1
+0.24.034.218 I srv        decode: SPEC_PROFILE phase=process us=691 tokens=4
+0.24.050.797 I srv    pre_decode: SPEC_PROFILE phase=draft us=15511 slots=1
+0.24.256.457 I srv        decode: SPEC_PROFILE phase=target us=205602 tokens=5 output=1
+0.24.257.106 I srv        decode: SPEC_PROFILE phase=process us=645 tokens=5
+0.24.274.431 I srv    pre_decode: SPEC_PROFILE phase=draft us=15122 slots=1
+0.24.480.455 I srv        decode: SPEC_PROFILE phase=target us=205979 tokens=5 output=1
+0.24.481.065 I srv        decode: SPEC_PROFILE phase=process us=607 tokens=5
+0.24.496.284 I srv    pre_decode: SPEC_PROFILE phase=draft us=13787 slots=1
+0.24.693.231 I srv        decode: SPEC_PROFILE phase=target us=196908 tokens=5 output=1
+0.24.693.764 I srv        decode: SPEC_PROFILE phase=process us=530 tokens=5
+0.24.710.094 I srv    pre_decode: SPEC_PROFILE phase=draft us=15274 slots=1
+0.24.907.287 I srv        decode: SPEC_PROFILE phase=target us=197156 tokens=5 output=1
+0.24.907.882 I srv        decode: SPEC_PROFILE phase=process us=592 tokens=5
+0.24.923.067 I srv    pre_decode: SPEC_PROFILE phase=draft us=14142 slots=1
+0.25.120.083 I srv        decode: SPEC_PROFILE phase=target us=196979 tokens=5 output=1
+0.25.120.698 I srv        decode: SPEC_PROFILE phase=process us=612 tokens=5
+0.25.135.884 I srv    pre_decode: SPEC_PROFILE phase=draft us=14138 slots=1
+0.25.332.576 I srv        decode: SPEC_PROFILE phase=target us=196641 tokens=5 output=1
+0.25.333.160 I srv        decode: SPEC_PROFILE phase=process us=582 tokens=5
+0.25.349.726 I srv    pre_decode: SPEC_PROFILE phase=draft us=15067 slots=1
+0.25.546.849 I srv        decode: SPEC_PROFILE phase=target us=197079 tokens=5 output=1
+0.25.547.370 I srv        decode: SPEC_PROFILE phase=process us=517 tokens=5
+0.25.563.610 I srv    pre_decode: SPEC_PROFILE phase=draft us=14625 slots=1
+0.25.759.045 I srv        decode: SPEC_PROFILE phase=target us=195372 tokens=5 output=1
+0.25.759.724 I srv        decode: SPEC_PROFILE phase=process us=674 tokens=5
+0.25.775.525 I srv    pre_decode: SPEC_PROFILE phase=draft us=14463 slots=1
+0.25.971.543 I srv        decode: SPEC_PROFILE phase=target us=195980 tokens=5 output=1
+0.25.972.083 I srv        decode: SPEC_PROFILE phase=process us=537 tokens=5
+0.25.988.461 I srv    pre_decode: SPEC_PROFILE phase=draft us=15359 slots=1
+0.26.185.128 I srv        decode: SPEC_PROFILE phase=target us=196628 tokens=5 output=1
+0.26.185.653 I srv        decode: SPEC_PROFILE phase=process us=522 tokens=5
+0.26.201.281 I srv    pre_decode: SPEC_PROFILE phase=draft us=13851 slots=1
+0.26.399.002 I srv        decode: SPEC_PROFILE phase=target us=197682 tokens=5 output=1
+0.26.399.687 I srv        decode: SPEC_PROFILE phase=process us=681 tokens=5
+0.26.415.861 I srv    pre_decode: SPEC_PROFILE phase=draft us=14448 slots=1
+0.26.612.390 I srv        decode: SPEC_PROFILE phase=target us=196489 tokens=5 output=1
+0.26.613.088 I srv        decode: SPEC_PROFILE phase=process us=689 tokens=5
+0.26.629.718 I srv    pre_decode: SPEC_PROFILE phase=draft us=14867 slots=1
+0.26.825.971 I srv        decode: SPEC_PROFILE phase=target us=196215 tokens=5 output=1
+0.26.826.496 I srv        decode: SPEC_PROFILE phase=process us=523 tokens=5
+0.26.842.308 I srv    pre_decode: SPEC_PROFILE phase=draft us=13813 slots=1
+0.27.038.676 I srv        decode: SPEC_PROFILE phase=target us=196330 tokens=5 output=1
+0.27.039.326 I srv        decode: SPEC_PROFILE phase=process us=646 tokens=5
+0.27.055.947 I srv    pre_decode: SPEC_PROFILE phase=draft us=15146 slots=1
+0.27.252.172 I srv        decode: SPEC_PROFILE phase=target us=196179 tokens=5 output=1
+0.27.252.868 I srv        decode: SPEC_PROFILE phase=process us=692 tokens=5
+0.27.269.242 I srv    pre_decode: SPEC_PROFILE phase=draft us=14684 slots=1
+0.27.466.508 I srv        decode: SPEC_PROFILE phase=target us=197223 tokens=5 output=1
+0.27.467.056 I srv        decode: SPEC_PROFILE phase=process us=544 tokens=5
+0.27.482.413 I srv    pre_decode: SPEC_PROFILE phase=draft us=13828 slots=1
+0.27.678.673 I srv        decode: SPEC_PROFILE phase=target us=196218 tokens=5 output=1
+0.27.679.206 I srv        decode: SPEC_PROFILE phase=process us=530 tokens=5
+0.27.695.922 I srv    pre_decode: SPEC_PROFILE phase=draft us=14923 slots=1
+0.27.893.100 I srv        decode: SPEC_PROFILE phase=target us=197138 tokens=5 output=1
+0.27.893.662 I srv        decode: SPEC_PROFILE phase=process us=559 tokens=5
+0.27.909.196 I srv    pre_decode: SPEC_PROFILE phase=draft us=13786 slots=1
+0.28.105.787 I srv        decode: SPEC_PROFILE phase=target us=196554 tokens=5 output=1
+0.28.106.296 I srv        decode: SPEC_PROFILE phase=process us=506 tokens=5
+0.28.121.885 I srv    pre_decode: SPEC_PROFILE phase=draft us=13806 slots=1
+0.28.318.343 I srv        decode: SPEC_PROFILE phase=target us=196417 tokens=5 output=1
+0.28.318.939 I srv        decode: SPEC_PROFILE phase=process us=592 tokens=5
+0.28.335.690 I srv    pre_decode: SPEC_PROFILE phase=draft us=15012 slots=1
+0.28.533.507 I srv        decode: SPEC_PROFILE phase=target us=197773 tokens=5 output=1
+0.28.534.188 I srv        decode: SPEC_PROFILE phase=process us=674 tokens=5
+0.28.549.842 I srv    pre_decode: SPEC_PROFILE phase=draft us=13924 slots=1
+0.28.747.839 I srv        decode: SPEC_PROFILE phase=target us=197961 tokens=5 output=1
+0.28.748.461 I srv        decode: SPEC_PROFILE phase=process us=619 tokens=5
+0.28.765.188 I srv    pre_decode: SPEC_PROFILE phase=draft us=15050 slots=1
+0.28.964.857 I srv        decode: SPEC_PROFILE phase=target us=199619 tokens=5 output=1
+0.28.965.392 I srv        decode: SPEC_PROFILE phase=process us=532 tokens=5
+0.28.982.321 I srv    pre_decode: SPEC_PROFILE phase=draft us=15048 slots=1
+0.29.179.959 I srv        decode: SPEC_PROFILE phase=target us=197596 tokens=5 output=1
+0.29.180.495 I srv        decode: SPEC_PROFILE phase=process us=533 tokens=5
+0.29.196.120 I srv    pre_decode: SPEC_PROFILE phase=draft us=13830 slots=1
+0.29.394.648 I srv        decode: SPEC_PROFILE phase=target us=198478 tokens=5 output=1
+0.29.395.267 I srv        decode: SPEC_PROFILE phase=process us=616 tokens=5
+0.29.397.025 I slot print_timing: id  0 | task 0 | n_gen =    101, tg =  18.65 t/s, tg_3s =  18.84 t/s
+0.29.411.950 I srv    pre_decode: SPEC_PROFILE phase=draft us=14914 slots=1
+0.29.608.964 I srv        decode: SPEC_PROFILE phase=target us=196960 tokens=5 output=1
+0.29.609.640 I srv        decode: SPEC_PROFILE phase=process us=673 tokens=5
+0.29.625.260 I srv    pre_decode: SPEC_PROFILE phase=draft us=13837 slots=1
+0.29.822.051 I srv        decode: SPEC_PROFILE phase=target us=196757 tokens=5 output=1
+0.29.822.671 I srv        decode: SPEC_PROFILE phase=process us=616 tokens=5
+0.29.838.341 I srv    pre_decode: SPEC_PROFILE phase=draft us=13911 slots=1
+0.30.036.050 I srv        decode: SPEC_PROFILE phase=target us=197661 tokens=5 output=1
+0.30.036.652 I srv        decode: SPEC_PROFILE phase=process us=600 tokens=5
+0.30.053.464 I srv    pre_decode: SPEC_PROFILE phase=draft us=15062 slots=1
+0.30.250.635 I srv        decode: SPEC_PROFILE phase=target us=197125 tokens=5 output=1
+0.30.251.183 I srv        decode: SPEC_PROFILE phase=process us=545 tokens=5
+0.30.267.817 I srv    pre_decode: SPEC_PROFILE phase=draft us=14702 slots=1
+0.30.464.778 I srv        decode: SPEC_PROFILE phase=target us=196917 tokens=5 output=1
+0.30.465.333 I srv        decode: SPEC_PROFILE phase=process us=552 tokens=5
+0.30.481.016 I srv    pre_decode: SPEC_PROFILE phase=draft us=13872 slots=1
+0.30.654.987 I srv        decode: SPEC_PROFILE phase=target us=173931 tokens=2 output=1
+0.30.655.516 I srv        decode: SPEC_PROFILE phase=process us=526 tokens=2
+0.30.656.561 I slot print_timing: id  0 | task 0 | prompt eval time =     667.96 ms /    59 tokens (   11.32 ms per token,    88.33 tokens per second)
+0.30.656.564 I slot print_timing: id  0 | task 0 |        eval time =    6621.23 ms /   128 tokens (   52.14 ms per token,    19.18 tokens per second)
+0.30.656.564 I slot print_timing: id  0 | task 0 |       total time =    7289.19 ms /   187 tokens
+0.30.656.568 I slot print_timing: id  0 | task 0 |    graphs reused =         30
+0.30.656.571 I slot print_timing: id  0 | task 0 | draft acceptance = 0.79339 (   96 accepted /   121 generated), mean len =  4.10
+0.30.656.616 I slot      release: id  0 | task 0 | stop processing: n_tokens = 186, truncated = 0
+0.30.755.393 I slot get_availabl: id  0 | task -1 | selected slot by LRU, t_last = 23025474715
+0.30.766.177 I slot launch_slot_: id  0 | task 34 | processing task, is_child = 0
+0.31.004.384 I srv        decode: SPEC_PROFILE phase=target us=238121 tokens=43 output=0
+0.31.050.946 I srv        decode: SPEC_PROFILE phase=process us=46556 tokens=43
+0.31.306.463 I srv        decode: SPEC_PROFILE phase=target us=191280 tokens=4 output=1
+0.31.306.917 I srv        decode: SPEC_PROFILE phase=process us=451 tokens=4
+0.31.323.164 I srv    pre_decode: SPEC_PROFILE phase=draft us=15719 slots=1
+0.31.524.915 I srv        decode: SPEC_PROFILE phase=target us=201712 tokens=5 output=1
+0.31.525.386 I srv        decode: SPEC_PROFILE phase=process us=468 tokens=5
+0.31.541.040 I srv    pre_decode: SPEC_PROFILE phase=draft us=13794 slots=1
+0.31.742.590 I srv        decode: SPEC_PROFILE phase=target us=201493 tokens=5 output=1
+0.31.743.226 I srv        decode: SPEC_PROFILE phase=process us=631 tokens=5
+0.31.759.652 I srv    pre_decode: SPEC_PROFILE phase=draft us=15238 slots=1
+0.31.956.001 I srv        decode: SPEC_PROFILE phase=target us=196306 tokens=5 output=1
+0.31.956.541 I srv        decode: SPEC_PROFILE phase=process us=536 tokens=5
+0.31.972.591 I srv    pre_decode: SPEC_PROFILE phase=draft us=14739 slots=1
+0.32.169.935 I srv        decode: SPEC_PROFILE phase=target us=197290 tokens=5 output=1
+0.32.170.690 I srv        decode: SPEC_PROFILE phase=process us=750 tokens=5
+0.32.188.297 I srv    pre_decode: SPEC_PROFILE phase=draft us=15228 slots=1
+0.32.388.369 I srv        decode: SPEC_PROFILE phase=target us=200032 tokens=5 output=1
+0.32.389.005 I srv        decode: SPEC_PROFILE phase=process us=631 tokens=5
+0.32.404.288 I srv    pre_decode: SPEC_PROFILE phase=draft us=14003 slots=1
+0.32.601.639 I srv        decode: SPEC_PROFILE phase=target us=197313 tokens=5 output=1
+0.32.602.196 I srv        decode: SPEC_PROFILE phase=process us=554 tokens=5
+0.32.618.519 I srv    pre_decode: SPEC_PROFILE phase=draft us=15568 slots=1
+0.32.814.647 I srv        decode: SPEC_PROFILE phase=target us=196072 tokens=5 output=1
+0.32.815.432 I srv        decode: SPEC_PROFILE phase=process us=781 tokens=5
+0.32.832.378 I srv    pre_decode: SPEC_PROFILE phase=draft us=14209 slots=1
+0.33.030.433 I srv        decode: SPEC_PROFILE phase=target us=197984 tokens=5 output=1
+0.33.031.071 I srv        decode: SPEC_PROFILE phase=process us=634 tokens=5
+0.33.046.936 I srv    pre_decode: SPEC_PROFILE phase=draft us=14375 slots=1
+0.33.244.103 I srv        decode: SPEC_PROFILE phase=target us=197098 tokens=5 output=1
+0.33.244.810 I srv        decode: SPEC_PROFILE phase=process us=702 tokens=5
+0.33.260.737 I srv    pre_decode: SPEC_PROFILE phase=draft us=14525 slots=1
+0.33.458.403 I srv        decode: SPEC_PROFILE phase=target us=197623 tokens=5 output=1
+0.33.458.954 I srv        decode: SPEC_PROFILE phase=process us=549 tokens=5
+0.33.475.083 I srv    pre_decode: SPEC_PROFILE phase=draft us=14338 slots=1
+0.33.671.567 I srv        decode: SPEC_PROFILE phase=target us=196443 tokens=5 output=1
+0.33.672.123 I srv        decode: SPEC_PROFILE phase=process us=554 tokens=5
+0.33.688.523 I srv    pre_decode: SPEC_PROFILE phase=draft us=14831 slots=1
+0.33.885.857 I srv        decode: SPEC_PROFILE phase=target us=197290 tokens=5 output=1
+0.33.886.618 I srv        decode: SPEC_PROFILE phase=process us=756 tokens=5
+0.33.902.691 I srv    pre_decode: SPEC_PROFILE phase=draft us=14096 slots=1
+0.34.100.144 I srv        decode: SPEC_PROFILE phase=target us=197384 tokens=5 output=1
+0.34.100.673 I srv        decode: SPEC_PROFILE phase=process us=526 tokens=5
+0.34.117.293 I srv    pre_decode: SPEC_PROFILE phase=draft us=14873 slots=1
+0.34.313.539 I srv        decode: SPEC_PROFILE phase=target us=196195 tokens=5 output=1
+0.34.314.152 I srv        decode: SPEC_PROFILE phase=process us=611 tokens=5
+0.34.329.914 I srv    pre_decode: SPEC_PROFILE phase=draft us=14001 slots=1
+0.34.526.379 I srv        decode: SPEC_PROFILE phase=target us=196414 tokens=5 output=1
+0.34.527.019 I srv        decode: SPEC_PROFILE phase=process us=636 tokens=5
+0.34.543.900 I srv    pre_decode: SPEC_PROFILE phase=draft us=15181 slots=1
+0.34.740.337 I srv        decode: SPEC_PROFILE phase=target us=196385 tokens=5 output=1
+0.34.741.109 I srv        decode: SPEC_PROFILE phase=process us=766 tokens=5
+0.34.758.698 I srv    pre_decode: SPEC_PROFILE phase=draft us=14753 slots=1
+0.34.954.632 I srv        decode: SPEC_PROFILE phase=target us=195892 tokens=5 output=1
+0.34.955.158 I srv        decode: SPEC_PROFILE phase=process us=522 tokens=5
+0.34.971.842 I srv    pre_decode: SPEC_PROFILE phase=draft us=14890 slots=1
+0.35.168.678 I srv        decode: SPEC_PROFILE phase=target us=196795 tokens=5 output=1
+0.35.169.224 I srv        decode: SPEC_PROFILE phase=process us=543 tokens=5
+0.35.184.923 I srv    pre_decode: SPEC_PROFILE phase=draft us=13931 slots=1
+0.35.382.637 I srv        decode: SPEC_PROFILE phase=target us=197675 tokens=5 output=1
+0.35.383.187 I srv        decode: SPEC_PROFILE phase=process us=548 tokens=5
+0.35.398.837 I srv    pre_decode: SPEC_PROFILE phase=draft us=14596 slots=1
+0.35.593.503 I srv        decode: SPEC_PROFILE phase=target us=194628 tokens=5 output=1
+0.35.594.125 I srv        decode: SPEC_PROFILE phase=process us=619 tokens=5
+0.35.610.630 I srv    pre_decode: SPEC_PROFILE phase=draft us=14773 slots=1
+0.35.806.605 I srv        decode: SPEC_PROFILE phase=target us=195925 tokens=5 output=1
+0.35.807.199 I srv        decode: SPEC_PROFILE phase=process us=591 tokens=5
+0.35.822.433 I srv    pre_decode: SPEC_PROFILE phase=draft us=13943 slots=1
+0.36.019.153 I srv        decode: SPEC_PROFILE phase=target us=196681 tokens=5 output=1
+0.36.019.933 I srv        decode: SPEC_PROFILE phase=process us=776 tokens=5
+0.36.037.317 I srv    pre_decode: SPEC_PROFILE phase=draft us=14975 slots=1
+0.36.233.293 I srv        decode: SPEC_PROFILE phase=target us=195934 tokens=5 output=1
+0.36.234.011 I srv        decode: SPEC_PROFILE phase=process us=714 tokens=5
+0.36.249.620 I srv    pre_decode: SPEC_PROFILE phase=draft us=13863 slots=1
+0.36.446.737 I srv        decode: SPEC_PROFILE phase=target us=197083 tokens=5 output=1
+0.36.447.297 I srv        decode: SPEC_PROFILE phase=process us=558 tokens=5
+0.36.463.810 I srv    pre_decode: SPEC_PROFILE phase=draft us=15230 slots=1
+0.36.659.396 I srv        decode: SPEC_PROFILE phase=target us=195537 tokens=5 output=1
+0.36.660.098 I srv        decode: SPEC_PROFILE phase=process us=697 tokens=5
+0.36.676.197 I srv    pre_decode: SPEC_PROFILE phase=draft us=14953 slots=1
+0.36.872.590 I srv        decode: SPEC_PROFILE phase=target us=196348 tokens=5 output=1
+0.36.873.254 I srv        decode: SPEC_PROFILE phase=process us=660 tokens=5
+0.36.888.359 I srv    pre_decode: SPEC_PROFILE phase=draft us=14330 slots=1
+0.37.083.809 I srv        decode: SPEC_PROFILE phase=target us=195411 tokens=5 output=1
+0.37.084.333 I srv        decode: SPEC_PROFILE phase=process us=521 tokens=5
+0.37.086.114 I slot print_timing: id  0 | task 34 | n_gen =    101, tg =  17.31 t/s, tg_3s =  17.48 t/s
+0.37.101.068 I srv    pre_decode: SPEC_PROFILE phase=draft us=14942 slots=1
+0.37.297.536 I srv        decode: SPEC_PROFILE phase=target us=196427 tokens=5 output=1
+0.37.298.063 I srv        decode: SPEC_PROFILE phase=process us=524 tokens=5
+0.37.313.663 I srv    pre_decode: SPEC_PROFILE phase=draft us=13826 slots=1
+0.37.510.060 I srv        decode: SPEC_PROFILE phase=target us=196354 tokens=5 output=1
+0.37.510.651 I srv        decode: SPEC_PROFILE phase=process us=588 tokens=5
+0.37.527.371 I srv    pre_decode: SPEC_PROFILE phase=draft us=15016 slots=1
+0.37.722.912 I srv        decode: SPEC_PROFILE phase=target us=195504 tokens=5 output=1
+0.37.723.520 I srv        decode: SPEC_PROFILE phase=process us=605 tokens=5
+0.37.739.032 I srv    pre_decode: SPEC_PROFILE phase=draft us=13795 slots=1
+0.37.934.843 I srv        decode: SPEC_PROFILE phase=target us=195777 tokens=5 output=1
+0.37.935.518 I srv        decode: SPEC_PROFILE phase=process us=671 tokens=5
+0.37.950.578 I srv    pre_decode: SPEC_PROFILE phase=draft us=14320 slots=1
+0.38.147.537 I srv        decode: SPEC_PROFILE phase=target us=196905 tokens=5 output=1
+0.38.148.287 I srv        decode: SPEC_PROFILE phase=process us=747 tokens=5
+0.38.166.534 I srv    pre_decode: SPEC_PROFILE phase=draft us=15459 slots=1
+0.38.363.887 I srv        decode: SPEC_PROFILE phase=target us=197306 tokens=5 output=1
+0.38.364.426 I srv        decode: SPEC_PROFILE phase=process us=536 tokens=5
+0.38.533.391 I srv        decode: SPEC_PROFILE phase=target us=167137 tokens=1 output=1
+0.38.533.874 I srv        decode: SPEC_PROFILE phase=process us=480 tokens=1
+0.38.534.338 I slot print_timing: id  0 | task 34 | prompt eval time =     541.25 ms /    47 tokens (   11.52 ms per token,    86.84 tokens per second)
+0.38.534.340 I slot print_timing: id  0 | task 34 |        eval time =    7226.90 ms /   128 tokens (   56.90 ms per token,    17.57 tokens per second)
+0.38.534.340 I slot print_timing: id  0 | task 34 |       total time =    7768.14 ms /   175 tokens
+0.38.534.341 I slot print_timing: id  0 | task 34 |    graphs reused =         62
+0.38.534.344 I slot print_timing: id  0 | task 34 | draft acceptance = 0.70455 (   93 accepted /   132 generated), mean len =  3.82
+0.38.534.373 I slot      release: id  0 | task 34 | stop processing: n_tokens = 174, truncated = 0
+0.38.632.178 I slot get_availabl: id  0 | task -1 | selected slot by LRU, t_last = 23033352472
+0.38.643.614 I slot launch_slot_: id  0 | task 71 | processing task, is_child = 0
+0.38.862.097 I srv        decode: SPEC_PROFILE phase=target us=218405 tokens=35 output=0
+0.38.904.741 I srv        decode: SPEC_PROFILE phase=process us=42639 tokens=35
+0.39.160.024 I srv        decode: SPEC_PROFILE phase=target us=191813 tokens=4 output=1
+0.39.160.593 I srv        decode: SPEC_PROFILE phase=process us=566 tokens=4
+0.39.176.816 I srv    pre_decode: SPEC_PROFILE phase=draft us=15120 slots=1
+0.39.378.060 I srv        decode: SPEC_PROFILE phase=target us=201190 tokens=5 output=1
+0.39.378.574 I srv        decode: SPEC_PROFILE phase=process us=511 tokens=5
+0.39.393.907 I srv    pre_decode: SPEC_PROFILE phase=draft us=13812 slots=1
+0.39.594.891 I srv        decode: SPEC_PROFILE phase=target us=200947 tokens=5 output=1
+0.39.595.535 I srv        decode: SPEC_PROFILE phase=process us=641 tokens=5
+0.39.611.838 I srv    pre_decode: SPEC_PROFILE phase=draft us=15522 slots=1
+0.39.808.418 I srv        decode: SPEC_PROFILE phase=target us=196545 tokens=5 output=1
+0.39.808.928 I srv        decode: SPEC_PROFILE phase=process us=507 tokens=5
+0.39.824.545 I srv    pre_decode: SPEC_PROFILE phase=draft us=13817 slots=1
+0.40.021.435 I srv        decode: SPEC_PROFILE phase=target us=196852 tokens=5 output=1
+0.40.022.119 I srv        decode: SPEC_PROFILE phase=process us=680 tokens=5
+0.40.039.770 I srv    pre_decode: SPEC_PROFILE phase=draft us=15899 slots=1
+0.40.239.357 I srv        decode: SPEC_PROFILE phase=target us=199543 tokens=5 output=1
+0.40.239.874 I srv        decode: SPEC_PROFILE phase=process us=515 tokens=5
+0.40.255.075 I srv    pre_decode: SPEC_PROFILE phase=draft us=13930 slots=1
+0.40.451.939 I srv        decode: SPEC_PROFILE phase=target us=196826 tokens=5 output=1
+0.40.452.471 I srv        decode: SPEC_PROFILE phase=process us=528 tokens=5
+0.40.468.789 I srv    pre_decode: SPEC_PROFILE phase=draft us=15577 slots=1
+0.40.664.559 I srv        decode: SPEC_PROFILE phase=target us=195729 tokens=5 output=1
+0.40.665.150 I srv        decode: SPEC_PROFILE phase=process us=588 tokens=5
+0.40.680.507 I srv    pre_decode: SPEC_PROFILE phase=draft us=13823 slots=1
+0.40.876.655 I srv        decode: SPEC_PROFILE phase=target us=196110 tokens=5 output=1
+0.40.877.158 I srv        decode: SPEC_PROFILE phase=process us=500 tokens=5
+0.40.892.357 I srv    pre_decode: SPEC_PROFILE phase=draft us=14459 slots=1
+0.41.087.746 I srv        decode: SPEC_PROFILE phase=target us=195351 tokens=5 output=1
+0.41.088.280 I srv        decode: SPEC_PROFILE phase=process us=530 tokens=5
+0.41.104.496 I srv    pre_decode: SPEC_PROFILE phase=draft us=15469 slots=1
+0.41.300.578 I srv        decode: SPEC_PROFILE phase=target us=196045 tokens=5 output=1
+0.41.301.144 I srv        decode: SPEC_PROFILE phase=process us=563 tokens=5
+0.41.316.752 I srv    pre_decode: SPEC_PROFILE phase=draft us=13908 slots=1
+0.41.513.677 I srv        decode: SPEC_PROFILE phase=target us=196875 tokens=5 output=1
+0.41.514.345 I srv        decode: SPEC_PROFILE phase=process us=660 tokens=5
+0.41.530.127 I srv    pre_decode: SPEC_PROFILE phase=draft us=14469 slots=1
+0.41.725.702 I srv        decode: SPEC_PROFILE phase=target us=195523 tokens=5 output=1
+0.41.726.256 I srv        decode: SPEC_PROFILE phase=process us=551 tokens=5
+0.41.742.542 I srv    pre_decode: SPEC_PROFILE phase=draft us=15275 slots=1
+0.41.938.108 I srv        decode: SPEC_PROFILE phase=target us=195531 tokens=5 output=1
+0.41.938.700 I srv        decode: SPEC_PROFILE phase=process us=589 tokens=5
+0.41.953.783 I srv    pre_decode: SPEC_PROFILE phase=draft us=14024 slots=1
+0.42.149.776 I srv        decode: SPEC_PROFILE phase=target us=195953 tokens=5 output=1
+0.42.150.463 I srv        decode: SPEC_PROFILE phase=process us=680 tokens=5
+0.42.168.659 I srv    pre_decode: SPEC_PROFILE phase=draft us=15403 slots=1
+0.42.364.003 I srv        decode: SPEC_PROFILE phase=target us=195295 tokens=5 output=1
+0.42.364.521 I srv        decode: SPEC_PROFILE phase=process us=512 tokens=5
+0.42.380.960 I srv    pre_decode: SPEC_PROFILE phase=draft us=14665 slots=1
+0.42.577.077 I srv        decode: SPEC_PROFILE phase=target us=196074 tokens=5 output=1
+0.42.577.597 I srv        decode: SPEC_PROFILE phase=process us=517 tokens=5
+0.42.593.911 I srv    pre_decode: SPEC_PROFILE phase=draft us=15561 slots=1
+0.42.789.221 I srv        decode: SPEC_PROFILE phase=target us=195270 tokens=5 output=1
+0.42.789.949 I srv        decode: SPEC_PROFILE phase=process us=725 tokens=5
+0.42.805.821 I srv    pre_decode: SPEC_PROFILE phase=draft us=14855 slots=1
+0.43.002.378 I srv        decode: SPEC_PROFILE phase=target us=196505 tokens=5 output=1
+0.43.002.885 I srv        decode: SPEC_PROFILE phase=process us=505 tokens=5
+0.43.018.550 I srv    pre_decode: SPEC_PROFILE phase=draft us=13971 slots=1
+0.43.213.668 I srv        decode: SPEC_PROFILE phase=target us=195067 tokens=5 output=1
+0.43.214.291 I srv        decode: SPEC_PROFILE phase=process us=618 tokens=5
+0.43.231.064 I srv    pre_decode: SPEC_PROFILE phase=draft us=15011 slots=1
+0.43.427.482 I srv        decode: SPEC_PROFILE phase=target us=196366 tokens=5 output=1
+0.43.428.127 I srv        decode: SPEC_PROFILE phase=process us=640 tokens=5
+0.43.443.334 I srv    pre_decode: SPEC_PROFILE phase=draft us=14166 slots=1
+0.43.639.378 I srv        decode: SPEC_PROFILE phase=target us=196007 tokens=5 output=1
+0.43.640.025 I srv        decode: SPEC_PROFILE phase=process us=643 tokens=5
+0.43.656.855 I srv    pre_decode: SPEC_PROFILE phase=draft us=15097 slots=1
+0.43.853.781 I srv        decode: SPEC_PROFILE phase=target us=196877 tokens=5 output=1
+0.43.854.318 I srv        decode: SPEC_PROFILE phase=process us=533 tokens=5
+0.43.870.432 I srv    pre_decode: SPEC_PROFILE phase=draft us=15037 slots=1
+0.44.066.590 I srv        decode: SPEC_PROFILE phase=target us=196112 tokens=5 output=1
+0.44.067.108 I srv        decode: SPEC_PROFILE phase=process us=515 tokens=5
+0.44.082.806 I srv    pre_decode: SPEC_PROFILE phase=draft us=14947 slots=1
+0.44.278.679 I srv        decode: SPEC_PROFILE phase=target us=195826 tokens=5 output=1
+0.44.279.220 I srv        decode: SPEC_PROFILE phase=process us=538 tokens=5
+0.44.295.555 I srv    pre_decode: SPEC_PROFILE phase=draft us=15574 slots=1
+0.44.491.987 I srv        decode: SPEC_PROFILE phase=target us=196393 tokens=5 output=1
+0.44.492.601 I srv        decode: SPEC_PROFILE phase=process us=611 tokens=5
+0.44.507.742 I srv    pre_decode: SPEC_PROFILE phase=draft us=13855 slots=1
+0.44.704.379 I srv        decode: SPEC_PROFILE phase=target us=196599 tokens=5 output=1
+0.44.705.052 I srv        decode: SPEC_PROFILE phase=process us=669 tokens=5
+0.44.721.837 I srv    pre_decode: SPEC_PROFILE phase=draft us=15049 slots=1
+0.44.917.922 I srv        decode: SPEC_PROFILE phase=target us=196045 tokens=5 output=1
+0.44.918.529 I srv        decode: SPEC_PROFILE phase=process us=604 tokens=5
+0.44.934.157 I srv    pre_decode: SPEC_PROFILE phase=draft us=13881 slots=1
+0.45.130.728 I srv        decode: SPEC_PROFILE phase=target us=196535 tokens=5 output=1
+0.45.131.284 I srv        decode: SPEC_PROFILE phase=process us=553 tokens=5
+0.45.146.942 I srv    pre_decode: SPEC_PROFILE phase=draft us=14617 slots=1
+0.45.342.165 I srv        decode: SPEC_PROFILE phase=target us=195173 tokens=5 output=1
+0.45.343.164 I srv        decode: SPEC_PROFILE phase=process us=988 tokens=5
+0.45.361.378 I srv    pre_decode: SPEC_PROFILE phase=draft us=15389 slots=1
+0.45.557.931 I srv        decode: SPEC_PROFILE phase=target us=196479 tokens=5 output=1
+0.45.558.477 I srv        decode: SPEC_PROFILE phase=process us=543 tokens=5
+0.45.574.327 I srv    pre_decode: SPEC_PROFILE phase=draft us=14541 slots=1
+0.45.769.474 I srv        decode: SPEC_PROFILE phase=target us=195106 tokens=5 output=1
+0.45.769.995 I srv        decode: SPEC_PROFILE phase=process us=517 tokens=5
+0.45.786.696 I srv    pre_decode: SPEC_PROFILE phase=draft us=14928 slots=1
+0.45.983.782 I srv        decode: SPEC_PROFILE phase=target us=197046 tokens=5 output=1
+0.45.984.306 I srv        decode: SPEC_PROFILE phase=process us=522 tokens=5
+0.45.986.119 I slot print_timing: id  0 | task 71 | n_gen =    101, tg =  14.65 t/s, tg_3s =  14.80 t/s
+0.45.999.982 I srv    pre_decode: SPEC_PROFILE phase=draft us=13852 slots=1
+0.46.196.918 I srv        decode: SPEC_PROFILE phase=target us=196885 tokens=5 output=1
+0.46.197.566 I srv        decode: SPEC_PROFILE phase=process us=644 tokens=5
+0.46.214.298 I srv    pre_decode: SPEC_PROFILE phase=draft us=15037 slots=1
+0.46.413.445 I srv        decode: SPEC_PROFILE phase=target us=199109 tokens=5 output=1
+0.46.414.089 I srv        decode: SPEC_PROFILE phase=process us=640 tokens=5
+0.46.429.788 I srv    pre_decode: SPEC_PROFILE phase=draft us=14003 slots=1
+0.46.626.459 I srv        decode: SPEC_PROFILE phase=target us=196621 tokens=5 output=1
+0.46.627.053 I srv        decode: SPEC_PROFILE phase=process us=590 tokens=5
+0.46.643.121 I srv    pre_decode: SPEC_PROFILE phase=draft us=14344 slots=1
+0.46.839.857 I srv        decode: SPEC_PROFILE phase=target us=196687 tokens=5 output=1
+0.46.840.636 I srv        decode: SPEC_PROFILE phase=process us=774 tokens=5
+0.46.857.802 I srv    pre_decode: SPEC_PROFILE phase=draft us=15017 slots=1
+0.47.055.247 I srv        decode: SPEC_PROFILE phase=target us=197400 tokens=5 output=1
+0.47.055.765 I srv        decode: SPEC_PROFILE phase=process us=515 tokens=5
+0.47.071.609 I srv    pre_decode: SPEC_PROFILE phase=draft us=14316 slots=1
+0.47.263.984 I srv        decode: SPEC_PROFILE phase=target us=192318 tokens=4 output=1
+0.47.264.501 I srv        decode: SPEC_PROFILE phase=process us=513 tokens=4
+0.47.266.018 I slot print_timing: id  0 | task 71 | prompt eval time =     518.06 ms /    39 tokens (   13.28 ms per token,    75.28 tokens per second)
+0.47.266.021 I slot print_timing: id  0 | task 71 |        eval time =    8104.27 ms /   128 tokens (   63.81 ms per token,    15.67 tokens per second)
+0.47.266.021 I slot print_timing: id  0 | task 71 |       total time =    8622.33 ms /   167 tokens
+0.47.266.022 I slot print_timing: id  0 | task 71 |    graphs reused =         98
+0.47.266.025 I slot print_timing: id  0 | task 71 | draft acceptance = 0.58940 (   89 accepted /   151 generated), mean len =  3.34
+0.47.266.056 I slot      release: id  0 | task 71 | stop processing: n_tokens = 166, truncated = 0
+1.10.049.193 I slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.536 (> 0.100 thold), f_keep = 0.181
+1.10.077.757 I slot launch_slot_: id  0 | task 112 | processing task, is_child = 0
+1.10.321.108 I srv        decode: SPEC_PROFILE phase=target us=243260 tokens=52 output=0
+1.10.372.849 I srv        decode: SPEC_PROFILE phase=process us=51735 tokens=52
+1.10.628.053 I srv        decode: SPEC_PROFILE phase=target us=191367 tokens=4 output=1
+1.10.628.598 I srv        decode: SPEC_PROFILE phase=process us=542 tokens=4
+1.10.645.019 I srv    pre_decode: SPEC_PROFILE phase=draft us=15881 slots=1
+1.10.845.161 I srv        decode: SPEC_PROFILE phase=target us=200093 tokens=5 output=1
+1.10.845.716 I srv        decode: SPEC_PROFILE phase=process us=552 tokens=5
+1.10.861.585 I srv    pre_decode: SPEC_PROFILE phase=draft us=15089 slots=1
+1.11.067.095 I srv        decode: SPEC_PROFILE phase=target us=205456 tokens=5 output=1
+1.11.067.633 I srv        decode: SPEC_PROFILE phase=process us=533 tokens=5
+1.11.083.004 I srv    pre_decode: SPEC_PROFILE phase=draft us=13840 slots=1
+1.11.278.642 I srv        decode: SPEC_PROFILE phase=target us=195601 tokens=5 output=1
+1.11.279.179 I srv        decode: SPEC_PROFILE phase=process us=534 tokens=5
+1.11.295.449 I srv    pre_decode: SPEC_PROFILE phase=draft us=14459 slots=1
+1.11.491.248 I srv        decode: SPEC_PROFILE phase=target us=195759 tokens=5 output=1
+1.11.492.164 I srv        decode: SPEC_PROFILE phase=process us=912 tokens=5
+1.11.509.893 I srv    pre_decode: SPEC_PROFILE phase=draft us=14442 slots=1
+1.11.709.097 I srv        decode: SPEC_PROFILE phase=target us=199134 tokens=5 output=1
+1.11.709.647 I srv        decode: SPEC_PROFILE phase=process us=547 tokens=5
+1.11.725.339 I srv    pre_decode: SPEC_PROFILE phase=draft us=14909 slots=1
+1.11.920.206 I srv        decode: SPEC_PROFILE phase=target us=194827 tokens=5 output=1
+1.11.920.874 I srv        decode: SPEC_PROFILE phase=process us=665 tokens=5
+1.11.937.230 I srv    pre_decode: SPEC_PROFILE phase=draft us=15374 slots=1
+1.12.133.467 I srv        decode: SPEC_PROFILE phase=target us=196186 tokens=5 output=1
+1.12.134.066 I srv        decode: SPEC_PROFILE phase=process us=596 tokens=5
+1.12.149.250 I srv    pre_decode: SPEC_PROFILE phase=draft us=14194 slots=1
+1.12.345.505 I srv        decode: SPEC_PROFILE phase=target us=196205 tokens=5 output=1
+1.12.346.098 I srv        decode: SPEC_PROFILE phase=process us=590 tokens=5
+1.12.362.453 I srv    pre_decode: SPEC_PROFILE phase=draft us=15059 slots=1
+1.12.558.634 I srv        decode: SPEC_PROFILE phase=target us=196134 tokens=5 output=1
+1.12.559.179 I srv        decode: SPEC_PROFILE phase=process us=542 tokens=5
+1.12.575.193 I srv    pre_decode: SPEC_PROFILE phase=draft us=14870 slots=1
+1.12.771.574 I srv        decode: SPEC_PROFILE phase=target us=196336 tokens=5 output=1
+1.12.772.092 I srv        decode: SPEC_PROFILE phase=process us=516 tokens=5
+1.12.787.788 I srv    pre_decode: SPEC_PROFILE phase=draft us=14943 slots=1
+1.12.983.635 I srv        decode: SPEC_PROFILE phase=target us=195806 tokens=5 output=1
+1.12.984.177 I srv        decode: SPEC_PROFILE phase=process us=539 tokens=5
+1.13.000.472 I srv    pre_decode: SPEC_PROFILE phase=draft us=15256 slots=1
+1.13.196.856 I srv        decode: SPEC_PROFILE phase=target us=196345 tokens=5 output=1
+1.13.197.465 I srv        decode: SPEC_PROFILE phase=process us=606 tokens=5
+1.13.212.858 I srv    pre_decode: SPEC_PROFILE phase=draft us=13860 slots=1
+1.13.409.089 I srv        decode: SPEC_PROFILE phase=target us=196194 tokens=5 output=1
+1.13.409.714 I srv        decode: SPEC_PROFILE phase=process us=622 tokens=5
+1.13.426.272 I srv    pre_decode: SPEC_PROFILE phase=draft us=15056 slots=1
+1.13.622.612 I srv        decode: SPEC_PROFILE phase=target us=196301 tokens=5 output=1
+1.13.623.164 I srv        decode: SPEC_PROFILE phase=process us=548 tokens=5
+1.13.638.550 I srv    pre_decode: SPEC_PROFILE phase=draft us=13892 slots=1
+1.13.835.685 I srv        decode: SPEC_PROFILE phase=target us=197083 tokens=5 output=1
+1.13.836.332 I srv        decode: SPEC_PROFILE phase=process us=645 tokens=5
+1.13.853.362 I srv    pre_decode: SPEC_PROFILE phase=draft us=15288 slots=1
+1.14.048.758 I srv        decode: SPEC_PROFILE phase=target us=195349 tokens=5 output=1
+1.14.049.406 I srv        decode: SPEC_PROFILE phase=process us=643 tokens=5
+1.14.064.858 I srv    pre_decode: SPEC_PROFILE phase=draft us=14559 slots=1
+1.14.261.333 I srv        decode: SPEC_PROFILE phase=target us=196432 tokens=5 output=1
+1.14.261.857 I srv        decode: SPEC_PROFILE phase=process us=521 tokens=5
+1.14.277.071 I srv    pre_decode: SPEC_PROFILE phase=draft us=14190 slots=1
+1.14.473.606 I srv        decode: SPEC_PROFILE phase=target us=196492 tokens=5 output=1
+1.14.474.465 I srv        decode: SPEC_PROFILE phase=process us=853 tokens=5
+1.14.491.061 I srv    pre_decode: SPEC_PROFILE phase=draft us=15453 slots=1
+1.14.688.166 I srv        decode: SPEC_PROFILE phase=target us=197064 tokens=5 output=1
+1.14.688.678 I srv        decode: SPEC_PROFILE phase=process us=509 tokens=5
+1.14.703.960 I srv    pre_decode: SPEC_PROFILE phase=draft us=14247 slots=1
+1.14.899.686 I srv        decode: SPEC_PROFILE phase=target us=195687 tokens=5 output=1
+1.14.900.329 I srv        decode: SPEC_PROFILE phase=process us=638 tokens=5
+1.14.917.110 I srv    pre_decode: SPEC_PROFILE phase=draft us=15052 slots=1
+1.15.114.706 I srv        decode: SPEC_PROFILE phase=target us=197558 tokens=5 output=1
+1.15.115.348 I srv        decode: SPEC_PROFILE phase=process us=639 tokens=5
+1.15.130.925 I srv    pre_decode: SPEC_PROFILE phase=draft us=13843 slots=1
+1.15.327.164 I srv        decode: SPEC_PROFILE phase=target us=196191 tokens=5 output=1
+1.15.327.689 I srv        decode: SPEC_PROFILE phase=process us=522 tokens=5
+1.15.344.040 I srv    pre_decode: SPEC_PROFILE phase=draft us=15323 slots=1
+1.15.538.783 I srv        decode: SPEC_PROFILE phase=target us=194698 tokens=5 output=1
+1.15.539.395 I srv        decode: SPEC_PROFILE phase=process us=607 tokens=5
+1.15.556.059 I srv    pre_decode: SPEC_PROFILE phase=draft us=14742 slots=1
+1.15.752.773 I srv        decode: SPEC_PROFILE phase=target us=196672 tokens=5 output=1
+1.15.753.287 I srv        decode: SPEC_PROFILE phase=process us=510 tokens=5
+1.15.769.008 I srv    pre_decode: SPEC_PROFILE phase=draft us=13943 slots=1
+1.15.964.604 I srv        decode: SPEC_PROFILE phase=target us=195555 tokens=5 output=1
+1.15.965.130 I srv        decode: SPEC_PROFILE phase=process us=523 tokens=5
+1.15.981.373 I srv    pre_decode: SPEC_PROFILE phase=draft us=15235 slots=1
+1.16.177.593 I srv        decode: SPEC_PROFILE phase=target us=196183 tokens=5 output=1
+1.16.178.240 I srv        decode: SPEC_PROFILE phase=process us=642 tokens=5
+1.16.193.972 I srv    pre_decode: SPEC_PROFILE phase=draft us=13983 slots=1
+1.16.390.819 I srv        decode: SPEC_PROFILE phase=target us=196794 tokens=5 output=1
+1.16.391.465 I srv        decode: SPEC_PROFILE phase=process us=644 tokens=5
+1.16.407.722 I srv    pre_decode: SPEC_PROFILE phase=draft us=14990 slots=1
+1.16.603.386 I srv        decode: SPEC_PROFILE phase=target us=195614 tokens=5 output=1
+1.16.604.009 I srv        decode: SPEC_PROFILE phase=process us=620 tokens=5
+1.16.619.141 I srv    pre_decode: SPEC_PROFILE phase=draft us=14136 slots=1
+1.16.815.769 I srv        decode: SPEC_PROFILE phase=target us=196579 tokens=5 output=1
+1.16.816.329 I srv        decode: SPEC_PROFILE phase=process us=557 tokens=5
+1.16.832.609 I srv    pre_decode: SPEC_PROFILE phase=draft us=15507 slots=1
+1.17.026.826 I srv        decode: SPEC_PROFILE phase=target us=194167 tokens=5 output=1
+1.17.027.365 I srv        decode: SPEC_PROFILE phase=process us=536 tokens=5
+1.17.043.675 I srv    pre_decode: SPEC_PROFILE phase=draft us=15531 slots=1
+1.17.240.607 I srv        decode: SPEC_PROFILE phase=target us=196883 tokens=5 output=1
+1.17.241.284 I srv        decode: SPEC_PROFILE phase=process us=673 tokens=5
+1.17.256.405 I srv    pre_decode: SPEC_PROFILE phase=draft us=14374 slots=1
+1.17.454.205 I srv        decode: SPEC_PROFILE phase=target us=197753 tokens=5 output=1
+1.17.454.927 I srv        decode: SPEC_PROFILE phase=process us=718 tokens=5
+1.17.473.531 I srv    pre_decode: SPEC_PROFILE phase=draft us=16231 slots=1
+1.17.668.864 I srv        decode: SPEC_PROFILE phase=target us=195288 tokens=5 output=1
+1.17.669.907 I srv        decode: SPEC_PROFILE phase=process us=1041 tokens=5
+1.17.685.095 I srv    pre_decode: SPEC_PROFILE phase=draft us=13928 slots=1
+1.17.880.609 I srv        decode: SPEC_PROFILE phase=target us=195476 tokens=5 output=1
+1.17.881.123 I srv        decode: SPEC_PROFILE phase=process us=511 tokens=5
+1.17.882.635 I slot print_timing: id  0 | task 112 | n_gen =    100, tg =  13.65 t/s, tg_3s =  13.79 t/s
+1.17.897.523 I srv    pre_decode: SPEC_PROFILE phase=draft us=14877 slots=1
+1.18.094.440 I srv        decode: SPEC_PROFILE phase=target us=196879 tokens=5 output=1
+1.18.095.033 I srv        decode: SPEC_PROFILE phase=process us=589 tokens=5
+1.18.110.145 I srv    pre_decode: SPEC_PROFILE phase=draft us=13860 slots=1
+1.18.306.618 I srv        decode: SPEC_PROFILE phase=target us=196436 tokens=5 output=1
+1.18.307.220 I srv        decode: SPEC_PROFILE phase=process us=598 tokens=5
+1.18.323.665 I srv    pre_decode: SPEC_PROFILE phase=draft us=14953 slots=1
+1.18.518.703 I srv        decode: SPEC_PROFILE phase=target us=195002 tokens=5 output=1
+1.18.519.628 I srv        decode: SPEC_PROFILE phase=process us=920 tokens=5
+1.18.534.802 I srv    pre_decode: SPEC_PROFILE phase=draft us=13920 slots=1
+1.18.730.875 I srv        decode: SPEC_PROFILE phase=target us=196018 tokens=5 output=1
+1.18.731.551 I srv        decode: SPEC_PROFILE phase=process us=672 tokens=5
+1.18.746.710 I srv    pre_decode: SPEC_PROFILE phase=draft us=14145 slots=1
+1.18.941.638 I srv        decode: SPEC_PROFILE phase=target us=194885 tokens=5 output=1
+1.18.942.280 I srv        decode: SPEC_PROFILE phase=process us=639 tokens=5
+1.18.959.799 I srv    pre_decode: SPEC_PROFILE phase=draft us=15796 slots=1
+1.19.156.853 I srv        decode: SPEC_PROFILE phase=target us=197004 tokens=5 output=1
+1.19.157.389 I srv        decode: SPEC_PROFILE phase=process us=532 tokens=5
+1.19.172.598 I srv    pre_decode: SPEC_PROFILE phase=draft us=14425 slots=1
+1.19.368.574 I srv        decode: SPEC_PROFILE phase=target us=195933 tokens=5 output=1
+1.19.369.134 I srv        decode: SPEC_PROFILE phase=process us=556 tokens=5
+1.19.385.346 I srv    pre_decode: SPEC_PROFILE phase=draft us=15173 slots=1
+1.19.581.954 I srv        decode: SPEC_PROFILE phase=target us=196561 tokens=5 output=1
+1.19.582.558 I srv        decode: SPEC_PROFILE phase=process us=600 tokens=5
+1.19.597.762 I srv    pre_decode: SPEC_PROFILE phase=draft us=14450 slots=1
+1.19.793.583 I srv        decode: SPEC_PROFILE phase=target us=195779 tokens=5 output=1
+1.19.794.137 I srv        decode: SPEC_PROFILE phase=process us=550 tokens=5
+1.19.809.463 I srv    pre_decode: SPEC_PROFILE phase=draft us=13817 slots=1
+1.20.006.082 I srv        decode: SPEC_PROFILE phase=target us=196564 tokens=5 output=1
+1.20.006.689 I srv        decode: SPEC_PROFILE phase=process us=604 tokens=5
+1.20.023.034 I srv    pre_decode: SPEC_PROFILE phase=draft us=15583 slots=1
+1.20.218.349 I srv        decode: SPEC_PROFILE phase=target us=195268 tokens=5 output=1
+1.20.218.866 I srv        decode: SPEC_PROFILE phase=process us=514 tokens=5
+1.20.234.553 I srv    pre_decode: SPEC_PROFILE phase=draft us=13972 slots=1
+1.20.430.937 I srv        decode: SPEC_PROFILE phase=target us=196338 tokens=5 output=1
+1.20.431.569 I srv        decode: SPEC_PROFILE phase=process us=629 tokens=5
+1.20.448.321 I srv    pre_decode: SPEC_PROFILE phase=draft us=15025 slots=1
+1.20.643.576 I srv        decode: SPEC_PROFILE phase=target us=195205 tokens=5 output=1
+1.20.644.296 I srv        decode: SPEC_PROFILE phase=process us=715 tokens=5
+1.20.660.994 I srv    pre_decode: SPEC_PROFILE phase=draft us=14753 slots=1
+1.20.857.075 I srv        decode: SPEC_PROFILE phase=target us=196033 tokens=5 output=1
+1.20.857.623 I srv        decode: SPEC_PROFILE phase=process us=545 tokens=5
+1.20.873.526 I srv    pre_decode: SPEC_PROFILE phase=draft us=14342 slots=1
+1.21.069.158 I srv        decode: SPEC_PROFILE phase=target us=195587 tokens=5 output=1
+1.21.069.671 I srv        decode: SPEC_PROFILE phase=process us=509 tokens=5
+1.21.070.950 I slot print_timing: id  0 | task 112 | n_gen =    148, tg =  14.08 t/s, tg_3s =  15.05 t/s
+1.21.085.924 I srv    pre_decode: SPEC_PROFILE phase=draft us=14961 slots=1
+1.21.290.319 I srv        decode: SPEC_PROFILE phase=target us=204351 tokens=5 output=1
+1.21.290.943 I srv        decode: SPEC_PROFILE phase=process us=621 tokens=5
+1.21.308.198 I srv    pre_decode: SPEC_PROFILE phase=draft us=15962 slots=1
+1.21.519.103 I srv        decode: SPEC_PROFILE phase=target us=210859 tokens=5 output=1
+1.21.519.722 I srv        decode: SPEC_PROFILE phase=process us=615 tokens=5
+1.21.536.900 I srv    pre_decode: SPEC_PROFILE phase=draft us=16402 slots=1
+1.21.731.779 I srv        decode: SPEC_PROFILE phase=target us=194823 tokens=5 output=1
+1.21.732.436 I srv        decode: SPEC_PROFILE phase=process us=652 tokens=5
+1.21.749.647 I srv    pre_decode: SPEC_PROFILE phase=draft us=15708 slots=1
+1.21.946.629 I srv        decode: SPEC_PROFILE phase=target us=196934 tokens=5 output=1
+1.21.947.190 I srv        decode: SPEC_PROFILE phase=process us=557 tokens=5
+1.21.962.389 I srv    pre_decode: SPEC_PROFILE phase=draft us=14425 slots=1
+1.22.156.911 I srv        decode: SPEC_PROFILE phase=target us=194478 tokens=5 output=1
+1.22.157.437 I srv        decode: SPEC_PROFILE phase=process us=522 tokens=5
+1.22.174.122 I srv    pre_decode: SPEC_PROFILE phase=draft us=14898 slots=1
+1.22.370.846 I srv        decode: SPEC_PROFILE phase=target us=196678 tokens=5 output=1
+1.22.371.475 I srv        decode: SPEC_PROFILE phase=process us=626 tokens=5
+1.22.386.664 I srv    pre_decode: SPEC_PROFILE phase=draft us=14135 slots=1
+1.22.582.845 I srv        decode: SPEC_PROFILE phase=target us=196132 tokens=5 output=1
+1.22.583.488 I srv        decode: SPEC_PROFILE phase=process us=640 tokens=5
+1.22.599.339 I srv    pre_decode: SPEC_PROFILE phase=draft us=14551 slots=1
+1.22.794.595 I srv        decode: SPEC_PROFILE phase=target us=195197 tokens=5 output=1
+1.22.795.617 I srv        decode: SPEC_PROFILE phase=process us=1018 tokens=5
+1.22.811.441 I srv    pre_decode: SPEC_PROFILE phase=draft us=14015 slots=1
+1.23.006.999 I srv        decode: SPEC_PROFILE phase=target us=195522 tokens=5 output=1
+1.23.007.539 I srv        decode: SPEC_PROFILE phase=process us=537 tokens=5
+1.23.023.141 I srv    pre_decode: SPEC_PROFILE phase=draft us=13857 slots=1
+1.23.219.752 I srv        decode: SPEC_PROFILE phase=target us=196559 tokens=5 output=1
+1.23.220.367 I srv        decode: SPEC_PROFILE phase=process us=612 tokens=5
+1.23.236.692 I srv    pre_decode: SPEC_PROFILE phase=draft us=15281 slots=1
+1.23.433.150 I srv        decode: SPEC_PROFILE phase=target us=196421 tokens=5 output=1
+1.23.433.644 I srv        decode: SPEC_PROFILE phase=process us=491 tokens=5
+1.23.449.268 I srv    pre_decode: SPEC_PROFILE phase=draft us=13885 slots=1
+1.23.645.269 I srv        decode: SPEC_PROFILE phase=target us=195965 tokens=5 output=1
+1.23.645.867 I srv        decode: SPEC_PROFILE phase=process us=594 tokens=5
+1.23.661.489 I srv    pre_decode: SPEC_PROFILE phase=draft us=14637 slots=1
+1.23.856.725 I srv        decode: SPEC_PROFILE phase=target us=195185 tokens=5 output=1
+1.23.857.336 I srv        decode: SPEC_PROFILE phase=process us=607 tokens=5
+1.23.874.918 I srv    pre_decode: SPEC_PROFILE phase=draft us=15847 slots=1
+1.24.070.114 I srv        decode: SPEC_PROFILE phase=target us=195149 tokens=5 output=1
+1.24.070.619 I srv        decode: SPEC_PROFILE phase=process us=503 tokens=5
+1.24.071.627 I slot print_timing: id  0 | task 112 | n_gen =    192, tg =  14.21 t/s, tg_3s =  14.66 t/s
+1.24.086.688 I srv    pre_decode: SPEC_PROFILE phase=draft us=15049 slots=1
+1.24.282.626 I srv        decode: SPEC_PROFILE phase=target us=195895 tokens=5 output=1
+1.24.283.162 I srv        decode: SPEC_PROFILE phase=process us=532 tokens=5
+1.24.299.444 I srv    pre_decode: SPEC_PROFILE phase=draft us=15001 slots=1
+1.24.495.646 I srv        decode: SPEC_PROFILE phase=target us=196162 tokens=5 output=1
+1.24.496.232 I srv        decode: SPEC_PROFILE phase=process us=583 tokens=5
+1.24.522.540 I srv    pre_decode: SPEC_PROFILE phase=draft us=25056 slots=1
+1.24.723.469 I srv        decode: SPEC_PROFILE phase=target us=200873 tokens=5 output=1
+1.24.724.013 I srv        decode: SPEC_PROFILE phase=process us=541 tokens=5
+1.24.739.569 I srv    pre_decode: SPEC_PROFILE phase=draft us=14827 slots=1
+1.24.940.134 I srv        decode: SPEC_PROFILE phase=target us=200530 tokens=5 output=1
+1.24.940.680 I srv        decode: SPEC_PROFILE phase=process us=543 tokens=5
+1.24.956.357 I srv    pre_decode: SPEC_PROFILE phase=draft us=14442 slots=1
+1.25.152.738 I srv        decode: SPEC_PROFILE phase=target us=196333 tokens=5 output=1
+1.25.153.366 I srv        decode: SPEC_PROFILE phase=process us=626 tokens=5
+1.25.171.032 I srv    pre_decode: SPEC_PROFILE phase=draft us=15801 slots=1
+1.25.369.746 I srv        decode: SPEC_PROFILE phase=target us=198661 tokens=5 output=1
+1.25.370.628 I srv        decode: SPEC_PROFILE phase=process us=876 tokens=5
+1.25.387.590 I srv    pre_decode: SPEC_PROFILE phase=draft us=14577 slots=1
+1.25.585.647 I srv        decode: SPEC_PROFILE phase=target us=198012 tokens=5 output=1
+1.25.586.253 I srv        decode: SPEC_PROFILE phase=process us=603 tokens=5
+1.25.601.922 I srv    pre_decode: SPEC_PROFILE phase=draft us=13867 slots=1
+1.25.799.459 I srv        decode: SPEC_PROFILE phase=target us=197499 tokens=5 output=1
+1.25.800.084 I srv        decode: SPEC_PROFILE phase=process us=620 tokens=5
+1.25.815.974 I srv    pre_decode: SPEC_PROFILE phase=draft us=14397 slots=1
+1.26.012.288 I srv        decode: SPEC_PROFILE phase=target us=196265 tokens=5 output=1
+1.26.012.938 I srv        decode: SPEC_PROFILE phase=process us=647 tokens=5
+1.26.029.546 I srv    pre_decode: SPEC_PROFILE phase=draft us=14853 slots=1
+1.26.226.397 I srv        decode: SPEC_PROFILE phase=target us=196813 tokens=5 output=1
+1.26.227.064 I srv        decode: SPEC_PROFILE phase=process us=663 tokens=5
+1.26.242.780 I srv    pre_decode: SPEC_PROFILE phase=draft us=13937 slots=1
+1.26.439.189 I srv        decode: SPEC_PROFILE phase=target us=196366 tokens=5 output=1
+1.26.439.911 I srv        decode: SPEC_PROFILE phase=process us=718 tokens=5
+1.26.456.881 I srv    pre_decode: SPEC_PROFILE phase=draft us=15216 slots=1
+1.26.653.658 I srv        decode: SPEC_PROFILE phase=target us=196701 tokens=5 output=1
+1.26.654.248 I srv        decode: SPEC_PROFILE phase=process us=586 tokens=5
+1.26.670.500 I srv    pre_decode: SPEC_PROFILE phase=draft us=14432 slots=1
+1.26.867.095 I srv        decode: SPEC_PROFILE phase=target us=196550 tokens=5 output=1
+1.26.867.647 I srv        decode: SPEC_PROFILE phase=process us=549 tokens=5
+1.26.884.005 I srv    pre_decode: SPEC_PROFILE phase=draft us=15056 slots=1
+1.27.081.618 I srv        decode: SPEC_PROFILE phase=target us=197566 tokens=5 output=1
+1.27.082.179 I srv        decode: SPEC_PROFILE phase=process us=557 tokens=5
+1.27.083.433 I slot print_timing: id  0 | task 112 | n_gen =    245, tg =  14.83 t/s, tg_3s =  17.60 t/s
+1.27.097.410 I srv    pre_decode: SPEC_PROFILE phase=draft us=13964 slots=1
+1.27.295.093 I srv        decode: SPEC_PROFILE phase=target us=197640 tokens=5 output=1
+1.27.295.721 I srv        decode: SPEC_PROFILE phase=process us=619 tokens=5
+1.27.312.018 I srv    pre_decode: SPEC_PROFILE phase=draft us=15560 slots=1
+1.27.509.278 I srv        decode: SPEC_PROFILE phase=target us=197214 tokens=5 output=1
+1.27.509.923 I srv        decode: SPEC_PROFILE phase=process us=640 tokens=5
+1.27.525.535 I srv    pre_decode: SPEC_PROFILE phase=draft us=13881 slots=1
+1.27.721.989 I srv        decode: SPEC_PROFILE phase=target us=196413 tokens=5 output=1
+1.27.722.588 I srv        decode: SPEC_PROFILE phase=process us=596 tokens=5
+1.27.738.252 I srv    pre_decode: SPEC_PROFILE phase=draft us=14647 slots=1
+1.27.934.039 I srv        decode: SPEC_PROFILE phase=target us=195720 tokens=5 output=1
+1.27.935.339 I srv        decode: SPEC_PROFILE phase=process us=1296 tokens=5
+1.27.951.573 I srv    pre_decode: SPEC_PROFILE phase=draft us=15320 slots=1
+1.28.148.603 I srv        decode: SPEC_PROFILE phase=target us=196985 tokens=5 output=1
+1.28.149.142 I srv        decode: SPEC_PROFILE phase=process us=536 tokens=5
+1.28.164.462 I srv    pre_decode: SPEC_PROFILE phase=draft us=14026 slots=1
+1.28.360.790 I srv        decode: SPEC_PROFILE phase=target us=196285 tokens=5 output=1
+1.28.361.304 I srv        decode: SPEC_PROFILE phase=process us=511 tokens=5
+1.28.378.009 I srv    pre_decode: SPEC_PROFILE phase=draft us=14902 slots=1
+1.28.574.703 I srv        decode: SPEC_PROFILE phase=target us=196646 tokens=5 output=1
+1.28.575.250 I srv        decode: SPEC_PROFILE phase=process us=544 tokens=5
+1.28.590.899 I srv    pre_decode: SPEC_PROFILE phase=draft us=13934 slots=1
+1.28.788.001 I srv        decode: SPEC_PROFILE phase=target us=197057 tokens=5 output=1
+1.28.788.545 I srv        decode: SPEC_PROFILE phase=process us=540 tokens=5
+1.28.805.320 I srv    pre_decode: SPEC_PROFILE phase=draft us=15003 slots=1
+1.29.003.194 I srv        decode: SPEC_PROFILE phase=target us=197832 tokens=5 output=1
+1.29.003.776 I srv        decode: SPEC_PROFILE phase=process us=579 tokens=5
+1.29.019.428 I srv    pre_decode: SPEC_PROFILE phase=draft us=13927 slots=1
+1.29.217.526 I srv        decode: SPEC_PROFILE phase=target us=198060 tokens=5 output=1
+1.29.218.121 I srv        decode: SPEC_PROFILE phase=process us=592 tokens=5
+1.29.234.493 I srv    pre_decode: SPEC_PROFILE phase=draft us=15611 slots=1
+1.29.432.613 I srv        decode: SPEC_PROFILE phase=target us=198082 tokens=5 output=1
+1.29.433.129 I srv        decode: SPEC_PROFILE phase=process us=512 tokens=5
+1.29.450.588 I srv    pre_decode: SPEC_PROFILE phase=draft us=15799 slots=1
+1.29.648.078 I srv        decode: SPEC_PROFILE phase=target us=197433 tokens=5 output=1
+1.29.648.625 I srv        decode: SPEC_PROFILE phase=process us=545 tokens=5
+1.29.664.707 I srv    pre_decode: SPEC_PROFILE phase=draft us=14295 slots=1
+1.29.860.914 I srv        decode: SPEC_PROFILE phase=target us=196158 tokens=5 output=1
+1.29.861.519 I srv        decode: SPEC_PROFILE phase=process us=602 tokens=5
+1.29.877.808 I srv    pre_decode: SPEC_PROFILE phase=draft us=15512 slots=1
+1.30.073.351 I srv        decode: SPEC_PROFILE phase=target us=195503 tokens=5 output=1
+1.30.073.859 I srv        decode: SPEC_PROFILE phase=process us=505 tokens=5
+1.30.089.894 I srv    pre_decode: SPEC_PROFILE phase=draft us=14746 slots=1
+1.30.287.087 I srv        decode: SPEC_PROFILE phase=target us=197147 tokens=5 output=1
+1.30.287.648 I srv        decode: SPEC_PROFILE phase=process us=558 tokens=5
+1.30.289.433 I slot print_timing: id  0 | task 112 | n_gen =    296, tg =  15.00 t/s, tg_3s =  15.91 t/s
+1.30.304.441 I srv    pre_decode: SPEC_PROFILE phase=draft us=14995 slots=1
+1.30.501.908 I srv        decode: SPEC_PROFILE phase=target us=197426 tokens=5 output=1
+1.30.502.428 I srv        decode: SPEC_PROFILE phase=process us=517 tokens=5
+1.30.518.075 I srv    pre_decode: SPEC_PROFILE phase=draft us=13873 slots=1
+1.30.715.091 I srv        decode: SPEC_PROFILE phase=target us=196977 tokens=5 output=1
+1.30.715.633 I srv        decode: SPEC_PROFILE phase=process us=538 tokens=5
+1.30.732.253 I srv    pre_decode: SPEC_PROFILE phase=draft us=14934 slots=1
+1.30.930.927 I srv        decode: SPEC_PROFILE phase=target us=198623 tokens=5 output=1
+1.30.931.555 I srv        decode: SPEC_PROFILE phase=process us=624 tokens=5
+1.30.946.831 I srv    pre_decode: SPEC_PROFILE phase=draft us=14219 slots=1
+1.31.143.820 I srv        decode: SPEC_PROFILE phase=target us=196952 tokens=5 output=1
+1.31.144.429 I srv        decode: SPEC_PROFILE phase=process us=607 tokens=5
+1.31.160.816 I srv    pre_decode: SPEC_PROFILE phase=draft us=15607 slots=1
+1.31.357.949 I srv        decode: SPEC_PROFILE phase=target us=197082 tokens=5 output=1
+1.31.358.488 I srv        decode: SPEC_PROFILE phase=process us=535 tokens=5
+1.31.375.020 I srv    pre_decode: SPEC_PROFILE phase=draft us=14628 slots=1
+1.31.572.664 I srv        decode: SPEC_PROFILE phase=target us=197600 tokens=5 output=1
+1.31.573.205 I srv        decode: SPEC_PROFILE phase=process us=537 tokens=5
+1.31.589.589 I srv    pre_decode: SPEC_PROFILE phase=draft us=15624 slots=1
+1.31.787.390 I srv        decode: SPEC_PROFILE phase=target us=197761 tokens=5 output=1
+1.31.787.910 I srv        decode: SPEC_PROFILE phase=process us=516 tokens=5
+1.31.803.162 I srv    pre_decode: SPEC_PROFILE phase=draft us=14509 slots=1
+1.32.000.448 I srv        decode: SPEC_PROFILE phase=target us=197248 tokens=5 output=1
+1.32.001.027 I srv        decode: SPEC_PROFILE phase=process us=575 tokens=5
+1.32.016.828 I srv    pre_decode: SPEC_PROFILE phase=draft us=14568 slots=1
+1.32.213.185 I srv        decode: SPEC_PROFILE phase=target us=196302 tokens=5 output=1
+1.32.213.807 I srv        decode: SPEC_PROFILE phase=process us=619 tokens=5
+1.32.230.190 I srv    pre_decode: SPEC_PROFILE phase=draft us=15096 slots=1
+1.32.427.325 I srv        decode: SPEC_PROFILE phase=target us=197100 tokens=5 output=1
+1.32.427.952 I srv        decode: SPEC_PROFILE phase=process us=624 tokens=5
+1.32.443.152 I srv    pre_decode: SPEC_PROFILE phase=draft us=13944 slots=1
+1.32.638.791 I srv        decode: SPEC_PROFILE phase=target us=195590 tokens=5 output=1
+1.32.639.400 I srv        decode: SPEC_PROFILE phase=process us=607 tokens=5
+1.32.655.939 I srv    pre_decode: SPEC_PROFILE phase=draft us=15763 slots=1
+1.32.853.239 I srv        decode: SPEC_PROFILE phase=target us=197255 tokens=5 output=1
+1.32.853.751 I srv        decode: SPEC_PROFILE phase=process us=508 tokens=5
+1.32.869.430 I srv    pre_decode: SPEC_PROFILE phase=draft us=13933 slots=1
+1.33.067.215 I srv        decode: SPEC_PROFILE phase=target us=197743 tokens=5 output=1
+1.33.067.740 I srv        decode: SPEC_PROFILE phase=process us=521 tokens=5
+1.33.084.426 I srv    pre_decode: SPEC_PROFILE phase=draft us=14963 slots=1
+1.33.281.391 I srv        decode: SPEC_PROFILE phase=target us=196923 tokens=5 output=1
+1.33.281.942 I srv        decode: SPEC_PROFILE phase=process us=547 tokens=5
+1.33.297.547 I srv    pre_decode: SPEC_PROFILE phase=draft us=13823 slots=1
+1.33.494.964 I srv        decode: SPEC_PROFILE phase=target us=197377 tokens=5 output=1
+1.33.495.495 I srv        decode: SPEC_PROFILE phase=process us=527 tokens=5
+1.33.496.845 I slot print_timing: id  0 | task 112 | n_gen =    344, tg =  15.00 t/s, tg_3s =  14.97 t/s
+1.33.511.249 I srv    pre_decode: SPEC_PROFILE phase=draft us=14391 slots=1
+1.33.707.672 I srv        decode: SPEC_PROFILE phase=target us=196384 tokens=5 output=1
+1.33.708.374 I srv        decode: SPEC_PROFILE phase=process us=700 tokens=5
+1.33.724.733 I srv    pre_decode: SPEC_PROFILE phase=draft us=14908 slots=1
+1.33.922.010 I srv        decode: SPEC_PROFILE phase=target us=197238 tokens=5 output=1
+1.33.922.494 I srv        decode: SPEC_PROFILE phase=process us=482 tokens=5
+1.33.938.130 I srv    pre_decode: SPEC_PROFILE phase=draft us=13936 slots=1
+1.34.134.760 I srv        decode: SPEC_PROFILE phase=target us=196591 tokens=5 output=1
+1.34.135.280 I srv        decode: SPEC_PROFILE phase=process us=517 tokens=5
+1.34.152.531 I srv    pre_decode: SPEC_PROFILE phase=draft us=16477 slots=1
+1.34.349.405 I srv        decode: SPEC_PROFILE phase=target us=196831 tokens=5 output=1
+1.34.350.202 I srv        decode: SPEC_PROFILE phase=process us=793 tokens=5
+1.34.365.782 I srv    pre_decode: SPEC_PROFILE phase=draft us=13802 slots=1
+1.34.563.359 I srv        decode: SPEC_PROFILE phase=target us=197535 tokens=5 output=1
+1.34.563.888 I srv        decode: SPEC_PROFILE phase=process us=526 tokens=5
+1.34.580.269 I srv    pre_decode: SPEC_PROFILE phase=draft us=15088 slots=1
+1.34.777.120 I srv        decode: SPEC_PROFILE phase=target us=196811 tokens=5 output=1
+1.34.777.760 I srv        decode: SPEC_PROFILE phase=process us=636 tokens=5
+1.34.793.005 I srv    pre_decode: SPEC_PROFILE phase=draft us=14494 slots=1
+1.34.990.149 I srv        decode: SPEC_PROFILE phase=target us=197106 tokens=5 output=1
+1.34.990.758 I srv        decode: SPEC_PROFILE phase=process us=606 tokens=5
+1.35.006.523 I srv    pre_decode: SPEC_PROFILE phase=draft us=14439 slots=1
+1.35.203.313 I srv        decode: SPEC_PROFILE phase=target us=196740 tokens=5 output=1
+1.35.204.065 I srv        decode: SPEC_PROFILE phase=process us=748 tokens=5
+1.35.219.700 I srv    pre_decode: SPEC_PROFILE phase=draft us=13936 slots=1
+1.35.418.401 I srv        decode: SPEC_PROFILE phase=target us=198653 tokens=5 output=1
+1.35.418.948 I srv        decode: SPEC_PROFILE phase=process us=543 tokens=5
+1.35.435.061 I srv    pre_decode: SPEC_PROFILE phase=draft us=14344 slots=1
+1.35.632.789 I srv        decode: SPEC_PROFILE phase=target us=197678 tokens=5 output=1
+1.35.633.327 I srv        decode: SPEC_PROFILE phase=process us=536 tokens=5
+1.35.649.886 I srv    pre_decode: SPEC_PROFILE phase=draft us=15047 slots=1
+1.35.846.541 I srv        decode: SPEC_PROFILE phase=target us=196608 tokens=5 output=1
+1.35.847.082 I srv        decode: SPEC_PROFILE phase=process us=539 tokens=5
+1.35.863.113 I srv    pre_decode: SPEC_PROFILE phase=draft us=14964 slots=1
+1.36.060.113 I srv        decode: SPEC_PROFILE phase=target us=196953 tokens=5 output=1
+1.36.060.628 I srv        decode: SPEC_PROFILE phase=process us=512 tokens=5
+1.36.077.118 I srv    pre_decode: SPEC_PROFILE phase=draft us=15218 slots=1
+1.36.274.357 I srv        decode: SPEC_PROFILE phase=target us=197200 tokens=5 output=1
+1.36.274.896 I srv        decode: SPEC_PROFILE phase=process us=536 tokens=5
+1.36.290.519 I srv    pre_decode: SPEC_PROFILE phase=draft us=13851 slots=1
+1.36.488.271 I srv        decode: SPEC_PROFILE phase=target us=197716 tokens=5 output=1
+1.36.488.865 I srv        decode: SPEC_PROFILE phase=process us=590 tokens=5
+1.36.505.201 I srv    pre_decode: SPEC_PROFILE phase=draft us=15253 slots=1
+1.36.703.226 I srv        decode: SPEC_PROFILE phase=target us=197988 tokens=5 output=1
+1.36.703.734 I srv        decode: SPEC_PROFILE phase=process us=505 tokens=5
+1.36.704.991 I slot print_timing: id  0 | task 112 | n_gen =    394, tg =  15.07 t/s, tg_3s =  15.59 t/s
+1.36.719.020 I srv    pre_decode: SPEC_PROFILE phase=draft us=14018 slots=1
+1.36.916.820 I srv        decode: SPEC_PROFILE phase=target us=197763 tokens=5 output=1
+1.36.917.374 I srv        decode: SPEC_PROFILE phase=process us=550 tokens=5
+1.36.933.645 I srv    pre_decode: SPEC_PROFILE phase=draft us=14998 slots=1
+1.37.130.761 I srv        decode: SPEC_PROFILE phase=target us=197079 tokens=5 output=1
+1.37.131.302 I srv        decode: SPEC_PROFILE phase=process us=538 tokens=5
+1.37.146.560 I srv    pre_decode: SPEC_PROFILE phase=draft us=14035 slots=1
+1.37.343.539 I srv        decode: SPEC_PROFILE phase=target us=196943 tokens=5 output=1
+1.37.344.087 I srv        decode: SPEC_PROFILE phase=process us=546 tokens=5
+1.37.359.836 I srv    pre_decode: SPEC_PROFILE phase=draft us=14521 slots=1
+1.37.559.323 I srv        decode: SPEC_PROFILE phase=target us=199439 tokens=5 output=1
+1.37.559.898 I srv        decode: SPEC_PROFILE phase=process us=571 tokens=5
+1.37.576.229 I srv    pre_decode: SPEC_PROFILE phase=draft us=14702 slots=1
+1.37.773.991 I srv        decode: SPEC_PROFILE phase=target us=197719 tokens=5 output=1
+1.37.774.538 I srv        decode: SPEC_PROFILE phase=process us=543 tokens=5
+1.37.791.048 I srv    pre_decode: SPEC_PROFILE phase=draft us=14907 slots=1
+1.37.988.681 I srv        decode: SPEC_PROFILE phase=target us=197581 tokens=5 output=1
+1.37.989.205 I srv        decode: SPEC_PROFILE phase=process us=521 tokens=5
+1.38.004.862 I srv    pre_decode: SPEC_PROFILE phase=draft us=13857 slots=1
+1.38.201.938 I srv        decode: SPEC_PROFILE phase=target us=197038 tokens=5 output=1
+1.38.202.486 I srv        decode: SPEC_PROFILE phase=process us=545 tokens=5
+1.38.218.563 I srv    pre_decode: SPEC_PROFILE phase=draft us=14315 slots=1
+1.38.417.063 I srv        decode: SPEC_PROFILE phase=target us=198449 tokens=5 output=1
+1.38.417.573 I srv        decode: SPEC_PROFILE phase=process us=507 tokens=5
+1.38.432.818 I srv    pre_decode: SPEC_PROFILE phase=draft us=14472 slots=1
+1.38.630.228 I srv        decode: SPEC_PROFILE phase=target us=197375 tokens=5 output=1
+1.38.630.756 I srv        decode: SPEC_PROFILE phase=process us=525 tokens=5
+1.38.646.021 I srv    pre_decode: SPEC_PROFILE phase=draft us=14255 slots=1
+1.38.842.527 I srv        decode: SPEC_PROFILE phase=target us=196458 tokens=5 output=1
+1.38.843.114 I srv        decode: SPEC_PROFILE phase=process us=585 tokens=5
+1.38.860.366 I srv    pre_decode: SPEC_PROFILE phase=draft us=16219 slots=1
+1.39.057.600 I srv        decode: SPEC_PROFILE phase=target us=197191 tokens=5 output=1
+1.39.058.116 I srv        decode: SPEC_PROFILE phase=process us=513 tokens=5
+1.39.073.377 I srv    pre_decode: SPEC_PROFILE phase=draft us=14517 slots=1
+1.39.271.015 I srv        decode: SPEC_PROFILE phase=target us=197597 tokens=5 output=1
+1.39.271.815 I srv        decode: SPEC_PROFILE phase=process us=797 tokens=5
+1.39.289.092 I srv    pre_decode: SPEC_PROFILE phase=draft us=15313 slots=1
+1.39.489.626 I srv        decode: SPEC_PROFILE phase=target us=200441 tokens=5 output=1
+1.39.490.297 I srv        decode: SPEC_PROFILE phase=process us=667 tokens=5
+1.39.505.618 I srv    pre_decode: SPEC_PROFILE phase=draft us=13952 slots=1
+1.39.704.144 I srv        decode: SPEC_PROFILE phase=target us=198489 tokens=5 output=1
+1.39.704.764 I srv        decode: SPEC_PROFILE phase=process us=617 tokens=5
+1.39.705.534 I slot print_timing: id  0 | task 112 | n_gen =    434, tg =  14.89 t/s, tg_3s =  13.33 t/s
+1.39.721.164 I srv    pre_decode: SPEC_PROFILE phase=draft us=15618 slots=1
+1.39.918.789 I srv        decode: SPEC_PROFILE phase=target us=197573 tokens=5 output=1
+1.39.919.428 I srv        decode: SPEC_PROFILE phase=process us=636 tokens=5
+1.39.934.594 I srv    pre_decode: SPEC_PROFILE phase=draft us=14092 slots=1
+1.40.131.848 I srv        decode: SPEC_PROFILE phase=target us=197216 tokens=5 output=1
+1.40.132.563 I srv        decode: SPEC_PROFILE phase=process us=710 tokens=5
+1.40.149.199 I srv    pre_decode: SPEC_PROFILE phase=draft us=14825 slots=1
+1.40.347.164 I srv        decode: SPEC_PROFILE phase=target us=197916 tokens=5 output=1
+1.40.347.727 I srv        decode: SPEC_PROFILE phase=process us=559 tokens=5
+1.40.364.306 I srv    pre_decode: SPEC_PROFILE phase=draft us=14770 slots=1
+1.40.561.461 I srv        decode: SPEC_PROFILE phase=target us=197110 tokens=5 output=1
+1.40.562.009 I srv        decode: SPEC_PROFILE phase=process us=545 tokens=5
+1.40.578.457 I srv    pre_decode: SPEC_PROFILE phase=draft us=14912 slots=1
+1.40.775.624 I srv        decode: SPEC_PROFILE phase=target us=197128 tokens=5 output=1
+1.40.776.143 I srv        decode: SPEC_PROFILE phase=process us=516 tokens=5
+1.40.791.548 I srv    pre_decode: SPEC_PROFILE phase=draft us=13869 slots=1
+1.40.993.804 I srv        decode: SPEC_PROFILE phase=target us=202219 tokens=5 output=1
+1.40.994.393 I srv        decode: SPEC_PROFILE phase=process us=586 tokens=5
+1.41.010.961 I srv    pre_decode: SPEC_PROFILE phase=draft us=15296 slots=1
+1.41.213.441 I srv        decode: SPEC_PROFILE phase=target us=202427 tokens=5 output=1
+1.41.214.065 I srv        decode: SPEC_PROFILE phase=process us=620 tokens=5
+1.41.229.398 I srv    pre_decode: SPEC_PROFILE phase=draft us=14335 slots=1
+1.41.427.770 I srv        decode: SPEC_PROFILE phase=target us=198335 tokens=5 output=1
+1.41.428.378 I srv        decode: SPEC_PROFILE phase=process us=605 tokens=5
+1.41.445.689 I srv    pre_decode: SPEC_PROFILE phase=draft us=16500 slots=1
+1.41.644.526 I srv        decode: SPEC_PROFILE phase=target us=198789 tokens=5 output=1
+1.41.645.076 I srv        decode: SPEC_PROFILE phase=process us=546 tokens=5
+1.41.660.450 I srv    pre_decode: SPEC_PROFILE phase=draft us=14341 slots=1
+1.41.858.189 I srv        decode: SPEC_PROFILE phase=target us=197700 tokens=5 output=1
+1.41.858.749 I srv        decode: SPEC_PROFILE phase=process us=557 tokens=5
+1.41.874.492 I srv    pre_decode: SPEC_PROFILE phase=draft us=13917 slots=1
+1.42.071.878 I srv        decode: SPEC_PROFILE phase=target us=197347 tokens=5 output=1
+1.42.072.403 I srv        decode: SPEC_PROFILE phase=process us=521 tokens=5
+1.42.088.703 I srv    pre_decode: SPEC_PROFILE phase=draft us=15547 slots=1
+1.42.287.025 I srv        decode: SPEC_PROFILE phase=target us=198280 tokens=5 output=1
+1.42.287.643 I srv        decode: SPEC_PROFILE phase=process us=615 tokens=5
+1.42.302.896 I srv    pre_decode: SPEC_PROFILE phase=draft us=13951 slots=1
+1.42.500.496 I srv        decode: SPEC_PROFILE phase=target us=197544 tokens=5 output=1
+1.42.501.178 I srv        decode: SPEC_PROFILE phase=process us=678 tokens=5
+1.42.517.512 I srv    pre_decode: SPEC_PROFILE phase=draft us=15070 slots=1
+1.42.715.104 I srv        decode: SPEC_PROFILE phase=target us=197540 tokens=5 output=1
+1.42.715.727 I srv        decode: SPEC_PROFILE phase=process us=619 tokens=5
+1.42.716.729 I slot print_timing: id  0 | task 112 | n_gen =    475, tg =  14.77 t/s, tg_3s =  13.62 t/s
+1.42.731.087 I srv    pre_decode: SPEC_PROFILE phase=draft us=14348 slots=1
+1.42.928.433 I srv        decode: SPEC_PROFILE phase=target us=197308 tokens=5 output=1
+1.42.929.079 I srv        decode: SPEC_PROFILE phase=process us=644 tokens=5
+1.42.944.799 I srv    pre_decode: SPEC_PROFILE phase=draft us=14910 slots=1
+1.43.143.494 I srv        decode: SPEC_PROFILE phase=target us=198649 tokens=5 output=1
+1.43.144.080 I srv        decode: SPEC_PROFILE phase=process us=582 tokens=5
+1.43.160.308 I srv    pre_decode: SPEC_PROFILE phase=draft us=15373 slots=1
+1.43.358.300 I srv        decode: SPEC_PROFILE phase=target us=197942 tokens=5 output=1
+1.43.358.852 I srv        decode: SPEC_PROFILE phase=process us=548 tokens=5
+1.43.375.369 I srv    pre_decode: SPEC_PROFILE phase=draft us=15231 slots=1
+1.43.571.993 I srv        decode: SPEC_PROFILE phase=target us=196579 tokens=5 output=1
+1.43.572.509 I srv        decode: SPEC_PROFILE phase=process us=512 tokens=5
+1.43.588.382 I srv    pre_decode: SPEC_PROFILE phase=draft us=14316 slots=1
+1.43.785.552 I srv        decode: SPEC_PROFILE phase=target us=197126 tokens=5 output=1
+1.43.786.176 I srv        decode: SPEC_PROFILE phase=process us=620 tokens=5
+1.43.801.527 I srv    pre_decode: SPEC_PROFILE phase=draft us=14551 slots=1
+1.43.998.282 I srv        decode: SPEC_PROFILE phase=target us=196712 tokens=5 output=1
+1.43.998.816 I srv        decode: SPEC_PROFILE phase=process us=531 tokens=5
+1.44.015.323 I srv    pre_decode: SPEC_PROFILE phase=draft us=15732 slots=1
+1.44.212.618 I srv        decode: SPEC_PROFILE phase=target us=197252 tokens=5 output=1
+1.44.213.229 I srv        decode: SPEC_PROFILE phase=process us=608 tokens=5
+1.44.228.906 I srv    pre_decode: SPEC_PROFILE phase=draft us=13951 slots=1
+1.44.426.289 I srv        decode: SPEC_PROFILE phase=target us=197343 tokens=5 output=1
+1.44.426.887 I srv        decode: SPEC_PROFILE phase=process us=595 tokens=5
+1.44.444.635 I srv    pre_decode: SPEC_PROFILE phase=draft us=15986 slots=1
+1.44.642.548 I srv        decode: SPEC_PROFILE phase=target us=197861 tokens=5 output=1
+1.44.643.093 I srv        decode: SPEC_PROFILE phase=process us=542 tokens=5
+1.44.658.928 I srv    pre_decode: SPEC_PROFILE phase=draft us=13997 slots=1
+1.44.856.085 I srv        decode: SPEC_PROFILE phase=target us=197105 tokens=5 output=1
+1.44.856.641 I srv        decode: SPEC_PROFILE phase=process us=553 tokens=5
+1.44.872.974 I srv    pre_decode: SPEC_PROFILE phase=draft us=15026 slots=1
+1.45.071.007 I srv        decode: SPEC_PROFILE phase=target us=197988 tokens=5 output=1
+1.45.071.537 I srv        decode: SPEC_PROFILE phase=process us=526 tokens=5
+1.45.087.624 I srv    pre_decode: SPEC_PROFILE phase=draft us=15310 slots=1
+1.45.285.157 I srv        decode: SPEC_PROFILE phase=target us=197489 tokens=5 output=1
+1.45.285.682 I srv        decode: SPEC_PROFILE phase=process us=522 tokens=5
+1.45.302.176 I srv    pre_decode: SPEC_PROFILE phase=draft us=14954 slots=1
+1.45.485.310 I srv        decode: SPEC_PROFILE phase=target us=183089 tokens=3 output=1
+1.45.485.803 I srv        decode: SPEC_PROFILE phase=process us=490 tokens=3
+1.45.501.807 I srv    pre_decode: SPEC_PROFILE phase=draft us=15230 slots=1
+1.45.674.199 I srv        decode: SPEC_PROFILE phase=target us=172347 tokens=2 output=1
+1.45.674.663 I srv        decode: SPEC_PROFILE phase=process us=460 tokens=2
+1.45.817.442 I srv        decode: SPEC_PROFILE phase=target us=141987 tokens=1 output=1
+1.45.817.863 I srv        decode: SPEC_PROFILE phase=process us=418 tokens=1
+1.45.818.377 I slot print_timing: id  0 | task 112 | prompt eval time =     551.35 ms /    56 tokens (    9.85 ms per token,   101.57 tokens per second)
+1.45.818.380 I slot print_timing: id  0 | task 112 |        eval time =   35189.25 ms /   512 tokens (   68.86 ms per token,    14.52 tokens per second)
+1.45.818.381 I slot print_timing: id  0 | task 112 |       total time =   35740.60 ms /   568 tokens
+1.45.818.382 I slot print_timing: id  0 | task 112 |    graphs reused =        257
+1.45.818.387 I slot print_timing: id  0 | task 112 | draft acceptance = 0.53149 (  346 accepted /   651 generated), mean len =  3.11
+1.45.818.422 I slot      release: id  0 | task 112 | stop processing: n_tokens = 567, truncated = 0
+1.55.308.191 I slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.099
+1.55.320.031 I slot launch_slot_: id  0 | task 280 | processing task, is_child = 0
+1.55.558.096 I srv        decode: SPEC_PROFILE phase=target us=237973 tokens=52 output=0
+1.55.608.754 I srv        decode: SPEC_PROFILE phase=process us=50654 tokens=52
+1.55.865.022 I srv        decode: SPEC_PROFILE phase=target us=191166 tokens=4 output=1
+1.55.865.553 I srv        decode: SPEC_PROFILE phase=process us=528 tokens=4
+1.55.881.148 I srv    pre_decode: SPEC_PROFILE phase=draft us=15059 slots=1
+1.56.081.589 I srv        decode: SPEC_PROFILE phase=target us=200394 tokens=5 output=1
+1.56.082.117 I srv        decode: SPEC_PROFILE phase=process us=525 tokens=5
+1.56.098.403 I srv    pre_decode: SPEC_PROFILE phase=draft us=14866 slots=1
+1.56.300.519 I srv        decode: SPEC_PROFILE phase=target us=202071 tokens=5 output=1
+1.56.301.159 I srv        decode: SPEC_PROFILE phase=process us=637 tokens=5
+1.56.316.607 I srv    pre_decode: SPEC_PROFILE phase=draft us=13875 slots=1
+1.56.513.670 I srv        decode: SPEC_PROFILE phase=target us=197019 tokens=5 output=1
+1.56.514.214 I srv        decode: SPEC_PROFILE phase=process us=541 tokens=5
+1.56.529.933 I srv    pre_decode: SPEC_PROFILE phase=draft us=13926 slots=1
+1.56.726.867 I srv        decode: SPEC_PROFILE phase=target us=196888 tokens=5 output=1
+1.56.727.476 I srv        decode: SPEC_PROFILE phase=process us=606 tokens=5
+1.56.744.559 I srv    pre_decode: SPEC_PROFILE phase=draft us=15353 slots=1
+1.56.940.544 I srv        decode: SPEC_PROFILE phase=target us=195939 tokens=5 output=1
+1.56.941.383 I srv        decode: SPEC_PROFILE phase=process us=834 tokens=5
+1.56.957.700 I srv    pre_decode: SPEC_PROFILE phase=draft us=15429 slots=1
+1.57.154.951 I srv        decode: SPEC_PROFILE phase=target us=197206 tokens=5 output=1
+1.57.155.534 I srv        decode: SPEC_PROFILE phase=process us=579 tokens=5
+1.57.170.744 I srv    pre_decode: SPEC_PROFILE phase=draft us=14168 slots=1
+1.57.366.575 I srv        decode: SPEC_PROFILE phase=target us=195793 tokens=5 output=1
+1.57.367.104 I srv        decode: SPEC_PROFILE phase=process us=526 tokens=5
+1.57.382.952 I srv    pre_decode: SPEC_PROFILE phase=draft us=14821 slots=1
+1.57.579.697 I srv        decode: SPEC_PROFILE phase=target us=196705 tokens=5 output=1
+1.57.580.227 I srv        decode: SPEC_PROFILE phase=process us=528 tokens=5
+1.57.596.941 I srv    pre_decode: SPEC_PROFILE phase=draft us=14915 slots=1
+1.57.792.169 I srv        decode: SPEC_PROFILE phase=target us=195186 tokens=5 output=1
+1.57.792.712 I srv        decode: SPEC_PROFILE phase=process us=540 tokens=5
+1.57.809.050 I srv    pre_decode: SPEC_PROFILE phase=draft us=15013 slots=1
+1.58.005.975 I srv        decode: SPEC_PROFILE phase=target us=196888 tokens=5 output=1
+1.58.006.506 I srv        decode: SPEC_PROFILE phase=process us=528 tokens=5
+1.58.021.798 I srv    pre_decode: SPEC_PROFILE phase=draft us=13820 slots=1
+1.58.218.244 I srv        decode: SPEC_PROFILE phase=target us=196411 tokens=5 output=1
+1.58.218.729 I srv        decode: SPEC_PROFILE phase=process us=482 tokens=5
+1.58.234.538 I srv    pre_decode: SPEC_PROFILE phase=draft us=14298 slots=1
+1.58.431.734 I srv        decode: SPEC_PROFILE phase=target us=197144 tokens=5 output=1
+1.58.432.398 I srv        decode: SPEC_PROFILE phase=process us=660 tokens=5
+1.58.449.167 I srv    pre_decode: SPEC_PROFILE phase=draft us=15284 slots=1
+1.58.644.655 I srv        decode: SPEC_PROFILE phase=target us=195443 tokens=5 output=1
+1.58.645.402 I srv        decode: SPEC_PROFILE phase=process us=742 tokens=5
+1.58.663.023 I srv    pre_decode: SPEC_PROFILE phase=draft us=15328 slots=1
+1.58.859.487 I srv        decode: SPEC_PROFILE phase=target us=196415 tokens=5 output=1
+1.58.860.008 I srv        decode: SPEC_PROFILE phase=process us=517 tokens=5
+1.58.875.999 I srv    pre_decode: SPEC_PROFILE phase=draft us=15239 slots=1
+1.59.073.010 I srv        decode: SPEC_PROFILE phase=target us=196971 tokens=5 output=1
+1.59.073.550 I srv        decode: SPEC_PROFILE phase=process us=537 tokens=5
+1.59.088.744 I srv    pre_decode: SPEC_PROFILE phase=draft us=14139 slots=1
+1.59.285.864 I srv        decode: SPEC_PROFILE phase=target us=197079 tokens=5 output=1
+1.59.286.385 I srv        decode: SPEC_PROFILE phase=process us=518 tokens=5
+1.59.302.658 I srv    pre_decode: SPEC_PROFILE phase=draft us=15507 slots=1
+1.59.498.299 I srv        decode: SPEC_PROFILE phase=target us=195602 tokens=5 output=1
+1.59.498.896 I srv        decode: SPEC_PROFILE phase=process us=593 tokens=5
+1.59.515.252 I srv    pre_decode: SPEC_PROFILE phase=draft us=15352 slots=1
+1.59.712.214 I srv        decode: SPEC_PROFILE phase=target us=196923 tokens=5 output=1
+1.59.712.863 I srv        decode: SPEC_PROFILE phase=process us=645 tokens=5
+1.59.728.496 I srv    pre_decode: SPEC_PROFILE phase=draft us=13941 slots=1
+1.59.924.602 I srv        decode: SPEC_PROFILE phase=target us=196069 tokens=5 output=1
+1.59.925.231 I srv        decode: SPEC_PROFILE phase=process us=626 tokens=5
+1.59.940.834 I srv    pre_decode: SPEC_PROFILE phase=draft us=13895 slots=1
+2.00.137.409 I srv        decode: SPEC_PROFILE phase=target us=196526 tokens=5 output=1
+2.00.138.031 I srv        decode: SPEC_PROFILE phase=process us=620 tokens=5
+2.00.153.638 I srv    pre_decode: SPEC_PROFILE phase=draft us=14516 slots=1
+2.00.350.603 I srv        decode: SPEC_PROFILE phase=target us=196920 tokens=5 output=1
+2.00.351.255 I srv        decode: SPEC_PROFILE phase=process us=649 tokens=5
+2.00.368.376 I srv    pre_decode: SPEC_PROFILE phase=draft us=15197 slots=1
+2.00.564.708 I srv        decode: SPEC_PROFILE phase=target us=196287 tokens=5 output=1
+2.00.565.327 I srv        decode: SPEC_PROFILE phase=process us=615 tokens=5
+2.00.581.067 I srv    pre_decode: SPEC_PROFILE phase=draft us=13934 slots=1
+2.00.777.931 I srv        decode: SPEC_PROFILE phase=target us=196823 tokens=5 output=1
+2.00.778.484 I srv        decode: SPEC_PROFILE phase=process us=549 tokens=5
+2.00.793.694 I srv    pre_decode: SPEC_PROFILE phase=draft us=14168 slots=1
+2.00.989.865 I srv        decode: SPEC_PROFILE phase=target us=196132 tokens=5 output=1
+2.00.990.419 I srv        decode: SPEC_PROFILE phase=process us=551 tokens=5
+2.01.006.167 I srv    pre_decode: SPEC_PROFILE phase=draft us=13917 slots=1
+2.01.203.761 I srv        decode: SPEC_PROFILE phase=target us=197551 tokens=5 output=1
+2.01.204.503 I srv        decode: SPEC_PROFILE phase=process us=738 tokens=5
+2.01.220.720 I srv    pre_decode: SPEC_PROFILE phase=draft us=14980 slots=1
+2.01.416.373 I srv        decode: SPEC_PROFILE phase=target us=195616 tokens=5 output=1
+2.01.416.901 I srv        decode: SPEC_PROFILE phase=process us=526 tokens=5
+2.01.433.380 I srv    pre_decode: SPEC_PROFILE phase=draft us=15450 slots=1
+2.01.630.464 I srv        decode: SPEC_PROFILE phase=target us=197032 tokens=5 output=1
+2.01.631.182 I srv        decode: SPEC_PROFILE phase=process us=713 tokens=5
+2.01.646.334 I srv    pre_decode: SPEC_PROFILE phase=draft us=14412 slots=1
+2.01.844.337 I srv        decode: SPEC_PROFILE phase=target us=197965 tokens=5 output=1
+2.01.844.877 I srv        decode: SPEC_PROFILE phase=process us=536 tokens=5
+2.01.860.127 I srv    pre_decode: SPEC_PROFILE phase=draft us=14479 slots=1
+2.02.057.824 I srv        decode: SPEC_PROFILE phase=target us=197657 tokens=5 output=1
+2.02.058.393 I srv        decode: SPEC_PROFILE phase=process us=565 tokens=5
+2.02.074.747 I srv    pre_decode: SPEC_PROFILE phase=draft us=15577 slots=1
+2.02.270.820 I srv        decode: SPEC_PROFILE phase=target us=196030 tokens=5 output=1
+2.02.271.356 I srv        decode: SPEC_PROFILE phase=process us=532 tokens=5
+2.02.287.790 I srv    pre_decode: SPEC_PROFILE phase=draft us=14887 slots=1
+2.02.485.033 I srv        decode: SPEC_PROFILE phase=target us=197204 tokens=5 output=1
+2.02.485.559 I srv        decode: SPEC_PROFILE phase=process us=523 tokens=5
+2.02.500.767 I srv    pre_decode: SPEC_PROFILE phase=draft us=13906 slots=1
+2.02.697.447 I srv        decode: SPEC_PROFILE phase=target us=196641 tokens=5 output=1
+2.02.698.032 I srv        decode: SPEC_PROFILE phase=process us=582 tokens=5
+2.02.699.514 I slot print_timing: id  0 | task 280 | n_gen =    100, tg =  14.49 t/s, tg_3s =  14.63 t/s
+2.02.713.413 I srv    pre_decode: SPEC_PROFILE phase=draft us=13889 slots=1
+2.02.910.899 I srv        decode: SPEC_PROFILE phase=target us=197447 tokens=5 output=1
+2.02.911.434 I srv        decode: SPEC_PROFILE phase=process us=532 tokens=5
+2.02.927.736 I srv    pre_decode: SPEC_PROFILE phase=draft us=14973 slots=1
+2.03.123.274 I srv        decode: SPEC_PROFILE phase=target us=195487 tokens=5 output=1
+2.03.123.909 I srv        decode: SPEC_PROFILE phase=process us=632 tokens=5
+2.03.140.565 I srv    pre_decode: SPEC_PROFILE phase=draft us=15046 slots=1
+2.03.337.012 I srv        decode: SPEC_PROFILE phase=target us=196409 tokens=5 output=1
+2.03.337.528 I srv        decode: SPEC_PROFILE phase=process us=513 tokens=5
+2.03.353.533 I srv    pre_decode: SPEC_PROFILE phase=draft us=14668 slots=1
+2.03.549.585 I srv        decode: SPEC_PROFILE phase=target us=196010 tokens=5 output=1
+2.03.550.133 I srv        decode: SPEC_PROFILE phase=process us=544 tokens=5
+2.03.566.144 I srv    pre_decode: SPEC_PROFILE phase=draft us=14962 slots=1
+2.03.762.915 I srv        decode: SPEC_PROFILE phase=target us=196731 tokens=5 output=1
+2.03.763.439 I srv        decode: SPEC_PROFILE phase=process us=520 tokens=5
+2.03.779.609 I srv    pre_decode: SPEC_PROFILE phase=draft us=14368 slots=1
+2.03.976.101 I srv        decode: SPEC_PROFILE phase=target us=196452 tokens=5 output=1
+2.03.976.655 I srv        decode: SPEC_PROFILE phase=process us=550 tokens=5
+2.03.992.967 I srv    pre_decode: SPEC_PROFILE phase=draft us=15525 slots=1
+2.04.188.181 I srv        decode: SPEC_PROFILE phase=target us=195173 tokens=5 output=1
+2.04.188.726 I srv        decode: SPEC_PROFILE phase=process us=541 tokens=5
+2.04.205.076 I srv    pre_decode: SPEC_PROFILE phase=draft us=15291 slots=1
+2.04.402.483 I srv        decode: SPEC_PROFILE phase=target us=197368 tokens=5 output=1
+2.04.403.047 I srv        decode: SPEC_PROFILE phase=process us=560 tokens=5
+2.04.418.231 I srv    pre_decode: SPEC_PROFILE phase=draft us=14406 slots=1
+2.04.614.633 I srv        decode: SPEC_PROFILE phase=target us=196365 tokens=5 output=1
+2.04.615.233 I srv        decode: SPEC_PROFILE phase=process us=597 tokens=5
+2.04.630.613 I srv    pre_decode: SPEC_PROFILE phase=draft us=13883 slots=1
+2.04.827.948 I srv        decode: SPEC_PROFILE phase=target us=197268 tokens=5 output=1
+2.04.828.486 I srv        decode: SPEC_PROFILE phase=process us=534 tokens=5
+2.04.845.679 I srv    pre_decode: SPEC_PROFILE phase=draft us=16401 slots=1
+2.05.041.213 I srv        decode: SPEC_PROFILE phase=target us=195489 tokens=5 output=1
+2.05.041.964 I srv        decode: SPEC_PROFILE phase=process us=747 tokens=5
+2.05.057.806 I srv    pre_decode: SPEC_PROFILE phase=draft us=13910 slots=1
+2.05.254.688 I srv        decode: SPEC_PROFILE phase=target us=196839 tokens=5 output=1
+2.05.255.267 I srv        decode: SPEC_PROFILE phase=process us=576 tokens=5
+2.05.271.714 I srv    pre_decode: SPEC_PROFILE phase=draft us=14623 slots=1
+2.05.469.711 I srv        decode: SPEC_PROFILE phase=target us=197956 tokens=5 output=1
+2.05.470.261 I srv        decode: SPEC_PROFILE phase=process us=548 tokens=5
+2.05.485.957 I srv    pre_decode: SPEC_PROFILE phase=draft us=13888 slots=1
+2.05.682.919 I srv        decode: SPEC_PROFILE phase=target us=196922 tokens=5 output=1
+2.05.683.476 I srv        decode: SPEC_PROFILE phase=process us=554 tokens=5
+2.05.700.098 I srv    pre_decode: SPEC_PROFILE phase=draft us=15060 slots=1
+2.05.895.851 I srv        decode: SPEC_PROFILE phase=target us=195714 tokens=5 output=1
+2.05.896.510 I srv        decode: SPEC_PROFILE phase=process us=656 tokens=5
+2.05.897.779 I slot print_timing: id  0 | task 280 | n_gen =    148, tg =  14.65 t/s, tg_3s =  15.01 t/s
+2.05.912.876 I srv    pre_decode: SPEC_PROFILE phase=draft us=15086 slots=1
+2.06.110.392 I srv        decode: SPEC_PROFILE phase=target us=197455 tokens=5 output=1
+2.06.110.986 I srv        decode: SPEC_PROFILE phase=process us=591 tokens=5
+2.06.126.183 I srv    pre_decode: SPEC_PROFILE phase=draft us=13916 slots=1
+2.06.323.659 I srv        decode: SPEC_PROFILE phase=target us=197441 tokens=5 output=1
+2.06.324.200 I srv        decode: SPEC_PROFILE phase=process us=538 tokens=5
+2.06.339.379 I srv    pre_decode: SPEC_PROFILE phase=draft us=14409 slots=1
+2.06.535.607 I srv        decode: SPEC_PROFILE phase=target us=196192 tokens=5 output=1
+2.06.536.117 I srv        decode: SPEC_PROFILE phase=process us=508 tokens=5
+2.06.551.846 I srv    pre_decode: SPEC_PROFILE phase=draft us=14483 slots=1
+2.06.749.301 I srv        decode: SPEC_PROFILE phase=target us=197401 tokens=5 output=1
+2.06.749.881 I srv        decode: SPEC_PROFILE phase=process us=577 tokens=5
+2.06.766.885 I srv    pre_decode: SPEC_PROFILE phase=draft us=16218 slots=1
+2.06.963.012 I srv        decode: SPEC_PROFILE phase=target us=196079 tokens=5 output=1
+2.06.963.574 I srv        decode: SPEC_PROFILE phase=process us=558 tokens=5
+2.06.980.443 I srv    pre_decode: SPEC_PROFILE phase=draft us=14725 slots=1
+2.07.177.472 I srv        decode: SPEC_PROFILE phase=target us=196986 tokens=5 output=1
+2.07.178.127 I srv        decode: SPEC_PROFILE phase=process us=652 tokens=5
+2.07.193.367 I srv    pre_decode: SPEC_PROFILE phase=draft us=14225 slots=1
+2.07.390.544 I srv        decode: SPEC_PROFILE phase=target us=197123 tokens=5 output=1
+2.07.391.192 I srv        decode: SPEC_PROFILE phase=process us=645 tokens=5
+2.07.406.923 I srv    pre_decode: SPEC_PROFILE phase=draft us=14496 slots=1
+2.07.603.284 I srv        decode: SPEC_PROFILE phase=target us=196323 tokens=5 output=1
+2.07.603.837 I srv        decode: SPEC_PROFILE phase=process us=550 tokens=5
+2.07.620.714 I srv    pre_decode: SPEC_PROFILE phase=draft us=15102 slots=1
+2.07.818.314 I srv        decode: SPEC_PROFILE phase=target us=197547 tokens=5 output=1
+2.07.818.888 I srv        decode: SPEC_PROFILE phase=process us=571 tokens=5
+2.07.834.574 I srv    pre_decode: SPEC_PROFILE phase=draft us=13959 slots=1
+2.08.032.361 I srv        decode: SPEC_PROFILE phase=target us=197736 tokens=5 output=1
+2.08.032.921 I srv        decode: SPEC_PROFILE phase=process us=557 tokens=5
+2.08.048.232 I srv    pre_decode: SPEC_PROFILE phase=draft us=14270 slots=1
+2.08.245.185 I srv        decode: SPEC_PROFILE phase=target us=196916 tokens=5 output=1
+2.08.245.772 I srv        decode: SPEC_PROFILE phase=process us=584 tokens=5
+2.08.263.340 I srv    pre_decode: SPEC_PROFILE phase=draft us=15820 slots=1
+2.08.460.498 I srv        decode: SPEC_PROFILE phase=target us=197094 tokens=5 output=1
+2.08.461.048 I srv        decode: SPEC_PROFILE phase=process us=547 tokens=5
+2.08.477.304 I srv    pre_decode: SPEC_PROFILE phase=draft us=15206 slots=1
+2.08.674.511 I srv        decode: SPEC_PROFILE phase=target us=197169 tokens=5 output=1
+2.08.675.048 I srv        decode: SPEC_PROFILE phase=process us=533 tokens=5
+2.08.690.694 I srv    pre_decode: SPEC_PROFILE phase=draft us=13847 slots=1
+2.08.887.033 I srv        decode: SPEC_PROFILE phase=target us=196300 tokens=5 output=1
+2.08.887.586 I srv        decode: SPEC_PROFILE phase=process us=551 tokens=5
+2.08.902.850 I srv    pre_decode: SPEC_PROFILE phase=draft us=14233 slots=1
+2.09.100.907 I srv        decode: SPEC_PROFILE phase=target us=198021 tokens=5 output=1
+2.09.101.465 I srv        decode: SPEC_PROFILE phase=process us=555 tokens=5
+2.09.102.716 I slot print_timing: id  0 | task 280 | n_gen =    195, tg =  14.66 t/s, tg_3s =  14.66 t/s
+2.09.117.806 I srv    pre_decode: SPEC_PROFILE phase=draft us=15078 slots=1
+2.09.313.189 I srv        decode: SPEC_PROFILE phase=target us=195343 tokens=5 output=1
+2.09.313.872 I srv        decode: SPEC_PROFILE phase=process us=680 tokens=5
+2.09.330.364 I srv    pre_decode: SPEC_PROFILE phase=draft us=15202 slots=1
+2.09.531.178 I srv        decode: SPEC_PROFILE phase=target us=200775 tokens=5 output=1
+2.09.531.727 I srv        decode: SPEC_PROFILE phase=process us=547 tokens=5
+2.09.547.240 I srv    pre_decode: SPEC_PROFILE phase=draft us=14772 slots=1
+2.09.748.678 I srv        decode: SPEC_PROFILE phase=target us=201398 tokens=5 output=1
+2.09.749.257 I srv        decode: SPEC_PROFILE phase=process us=575 tokens=5
+2.09.765.833 I srv    pre_decode: SPEC_PROFILE phase=draft us=15346 slots=1
+2.09.964.960 I srv        decode: SPEC_PROFILE phase=target us=199070 tokens=5 output=1
+2.09.965.510 I srv        decode: SPEC_PROFILE phase=process us=547 tokens=5
+2.09.981.895 I srv    pre_decode: SPEC_PROFILE phase=draft us=14826 slots=1
+2.10.179.250 I srv        decode: SPEC_PROFILE phase=target us=197310 tokens=5 output=1
+2.10.179.789 I srv        decode: SPEC_PROFILE phase=process us=535 tokens=5
+2.10.195.224 I srv    pre_decode: SPEC_PROFILE phase=draft us=13880 slots=1
+2.10.393.157 I srv        decode: SPEC_PROFILE phase=target us=197894 tokens=5 output=1
+2.10.393.793 I srv        decode: SPEC_PROFILE phase=process us=632 tokens=5
+2.10.409.438 I srv    pre_decode: SPEC_PROFILE phase=draft us=13916 slots=1
+2.10.606.686 I srv        decode: SPEC_PROFILE phase=target us=197192 tokens=5 output=1
+2.10.607.364 I srv        decode: SPEC_PROFILE phase=process us=674 tokens=5
+2.10.623.851 I srv    pre_decode: SPEC_PROFILE phase=draft us=15022 slots=1
+2.10.820.695 I srv        decode: SPEC_PROFILE phase=target us=196790 tokens=5 output=1
+2.10.821.513 I srv        decode: SPEC_PROFILE phase=process us=815 tokens=5
+2.10.837.438 I srv    pre_decode: SPEC_PROFILE phase=draft us=14165 slots=1
+2.11.035.059 I srv        decode: SPEC_PROFILE phase=target us=197585 tokens=5 output=1
+2.11.035.616 I srv        decode: SPEC_PROFILE phase=process us=553 tokens=5
+2.11.051.367 I srv    pre_decode: SPEC_PROFILE phase=draft us=13978 slots=1
+2.11.248.678 I srv        decode: SPEC_PROFILE phase=target us=197260 tokens=5 output=1
+2.11.249.202 I srv        decode: SPEC_PROFILE phase=process us=520 tokens=5
+2.11.264.873 I srv    pre_decode: SPEC_PROFILE phase=draft us=13875 slots=1
+2.11.463.293 I srv        decode: SPEC_PROFILE phase=target us=198376 tokens=5 output=1
+2.11.463.833 I srv        decode: SPEC_PROFILE phase=process us=537 tokens=5
+2.11.480.943 I srv    pre_decode: SPEC_PROFILE phase=draft us=15059 slots=1
+2.11.678.899 I srv        decode: SPEC_PROFILE phase=target us=197917 tokens=5 output=1
+2.11.679.494 I srv        decode: SPEC_PROFILE phase=process us=591 tokens=5
+2.11.694.696 I srv    pre_decode: SPEC_PROFILE phase=draft us=13898 slots=1
+2.11.894.105 I srv        decode: SPEC_PROFILE phase=target us=199370 tokens=5 output=1
+2.11.894.975 I srv        decode: SPEC_PROFILE phase=process us=865 tokens=5
+2.11.910.944 I srv    pre_decode: SPEC_PROFILE phase=draft us=14102 slots=1
+2.12.108.149 I srv        decode: SPEC_PROFILE phase=target us=197162 tokens=5 output=1
+2.12.108.674 I srv        decode: SPEC_PROFILE phase=process us=522 tokens=5
+2.12.109.421 I slot print_timing: id  0 | task 280 | n_gen =    246, tg =  15.08 t/s, tg_3s =  16.96 t/s
+2.12.125.017 I srv    pre_decode: SPEC_PROFILE phase=draft us=15584 slots=1
+2.12.321.686 I srv        decode: SPEC_PROFILE phase=target us=196628 tokens=5 output=1
+2.12.322.299 I srv        decode: SPEC_PROFILE phase=process us=610 tokens=5
+2.12.338.895 I srv    pre_decode: SPEC_PROFILE phase=draft us=14874 slots=1
+2.12.537.387 I srv        decode: SPEC_PROFILE phase=target us=198438 tokens=5 output=1
+2.12.537.983 I srv        decode: SPEC_PROFILE phase=process us=594 tokens=5
+2.12.553.306 I srv    pre_decode: SPEC_PROFILE phase=draft us=14324 slots=1
+2.12.751.786 I srv        decode: SPEC_PROFILE phase=target us=198429 tokens=5 output=1
+2.12.752.350 I srv        decode: SPEC_PROFILE phase=process us=561 tokens=5
+2.12.767.616 I srv    pre_decode: SPEC_PROFILE phase=draft us=14491 slots=1
+2.12.964.123 I srv        decode: SPEC_PROFILE phase=target us=196467 tokens=5 output=1
+2.12.964.715 I srv        decode: SPEC_PROFILE phase=process us=589 tokens=5
+2.12.981.003 I srv    pre_decode: SPEC_PROFILE phase=draft us=15007 slots=1
+2.13.178.064 I srv        decode: SPEC_PROFILE phase=target us=197021 tokens=5 output=1
+2.13.178.681 I srv        decode: SPEC_PROFILE phase=process us=614 tokens=5
+2.13.194.396 I srv    pre_decode: SPEC_PROFILE phase=draft us=13904 slots=1
+2.13.392.067 I srv        decode: SPEC_PROFILE phase=target us=197619 tokens=5 output=1
+2.13.392.698 I srv        decode: SPEC_PROFILE phase=process us=627 tokens=5
+2.13.408.399 I srv    pre_decode: SPEC_PROFILE phase=draft us=13948 slots=1
+2.13.605.750 I srv        decode: SPEC_PROFILE phase=target us=197301 tokens=5 output=1
+2.13.606.276 I srv        decode: SPEC_PROFILE phase=process us=523 tokens=5
+2.13.622.008 I srv    pre_decode: SPEC_PROFILE phase=draft us=13941 slots=1
+2.13.819.862 I srv        decode: SPEC_PROFILE phase=target us=197812 tokens=5 output=1
+2.13.820.483 I srv        decode: SPEC_PROFILE phase=process us=618 tokens=5
+2.13.837.385 I srv    pre_decode: SPEC_PROFILE phase=draft us=15183 slots=1
+2.14.035.042 I srv        decode: SPEC_PROFILE phase=target us=197602 tokens=5 output=1
+2.14.035.615 I srv        decode: SPEC_PROFILE phase=process us=569 tokens=5
+2.14.051.689 I srv    pre_decode: SPEC_PROFILE phase=draft us=15257 slots=1
+2.14.247.842 I srv        decode: SPEC_PROFILE phase=target us=196111 tokens=5 output=1
+2.14.248.357 I srv        decode: SPEC_PROFILE phase=process us=512 tokens=5
+2.14.264.260 I srv    pre_decode: SPEC_PROFILE phase=draft us=14289 slots=1
+2.14.462.044 I srv        decode: SPEC_PROFILE phase=target us=197744 tokens=5 output=1
+2.14.462.581 I srv        decode: SPEC_PROFILE phase=process us=534 tokens=5
+2.14.478.770 I srv    pre_decode: SPEC_PROFILE phase=draft us=14389 slots=1
+2.14.676.344 I srv        decode: SPEC_PROFILE phase=target us=197534 tokens=5 output=1
+2.14.676.869 I srv        decode: SPEC_PROFILE phase=process us=522 tokens=5
+2.14.693.173 I srv    pre_decode: SPEC_PROFILE phase=draft us=15554 slots=1
+2.14.890.373 I srv        decode: SPEC_PROFILE phase=target us=197159 tokens=5 output=1
+2.14.890.944 I srv        decode: SPEC_PROFILE phase=process us=568 tokens=5
+2.14.906.199 I srv    pre_decode: SPEC_PROFILE phase=draft us=13968 slots=1
+2.15.103.927 I srv        decode: SPEC_PROFILE phase=target us=197692 tokens=5 output=1
+2.15.104.467 I srv        decode: SPEC_PROFILE phase=process us=537 tokens=5
+2.15.120.105 I srv    pre_decode: SPEC_PROFILE phase=draft us=13870 slots=1
+2.15.318.893 I srv        decode: SPEC_PROFILE phase=target us=198751 tokens=5 output=1
+2.15.319.499 I srv        decode: SPEC_PROFILE phase=process us=603 tokens=5
+2.15.321.252 I slot print_timing: id  0 | task 280 | n_gen =    301, tg =  15.42 t/s, tg_3s =  17.12 t/s
+2.15.336.431 I srv    pre_decode: SPEC_PROFILE phase=draft us=15166 slots=1
+2.15.533.414 I srv        decode: SPEC_PROFILE phase=target us=196937 tokens=5 output=1
+2.15.533.926 I srv        decode: SPEC_PROFILE phase=process us=510 tokens=5
+2.15.551.627 I srv    pre_decode: SPEC_PROFILE phase=draft us=15790 slots=1
+2.15.748.015 I srv        decode: SPEC_PROFILE phase=target us=196343 tokens=5 output=1
+2.15.748.537 I srv        decode: SPEC_PROFILE phase=process us=520 tokens=5
+2.15.764.430 I srv    pre_decode: SPEC_PROFILE phase=draft us=14863 slots=1
+2.15.961.451 I srv        decode: SPEC_PROFILE phase=target us=196982 tokens=5 output=1
+2.15.962.008 I srv        decode: SPEC_PROFILE phase=process us=554 tokens=5
+2.15.977.264 I srv    pre_decode: SPEC_PROFILE phase=draft us=14509 slots=1
+2.16.174.200 I srv        decode: SPEC_PROFILE phase=target us=196897 tokens=5 output=1
+2.16.174.718 I srv        decode: SPEC_PROFILE phase=process us=515 tokens=5
+2.16.191.478 I srv    pre_decode: SPEC_PROFILE phase=draft us=14965 slots=1
+2.16.388.655 I srv        decode: SPEC_PROFILE phase=target us=197138 tokens=5 output=1
+2.16.389.201 I srv        decode: SPEC_PROFILE phase=process us=543 tokens=5
+2.16.405.655 I srv    pre_decode: SPEC_PROFILE phase=draft us=15691 slots=1
+2.16.602.823 I srv        decode: SPEC_PROFILE phase=target us=197129 tokens=5 output=1
+2.16.603.355 I srv        decode: SPEC_PROFILE phase=process us=529 tokens=5
+2.16.618.776 I srv    pre_decode: SPEC_PROFILE phase=draft us=13888 slots=1
+2.16.817.502 I srv        decode: SPEC_PROFILE phase=target us=198690 tokens=5 output=1
+2.16.818.025 I srv        decode: SPEC_PROFILE phase=process us=521 tokens=5
+2.16.833.225 I srv    pre_decode: SPEC_PROFILE phase=draft us=13988 slots=1
+2.17.030.853 I srv        decode: SPEC_PROFILE phase=target us=197575 tokens=5 output=1
+2.17.031.415 I srv        decode: SPEC_PROFILE phase=process us=559 tokens=5
+2.17.048.055 I srv    pre_decode: SPEC_PROFILE phase=draft us=15420 slots=1
+2.17.244.424 I srv        decode: SPEC_PROFILE phase=target us=196323 tokens=5 output=1
+2.17.245.085 I srv        decode: SPEC_PROFILE phase=process us=657 tokens=5
+2.17.261.400 I srv    pre_decode: SPEC_PROFILE phase=draft us=15419 slots=1
+2.17.459.530 I srv        decode: SPEC_PROFILE phase=target us=198074 tokens=5 output=1
+2.17.460.066 I srv        decode: SPEC_PROFILE phase=process us=533 tokens=5
+2.17.475.745 I srv    pre_decode: SPEC_PROFILE phase=draft us=13901 slots=1
+2.17.673.440 I srv        decode: SPEC_PROFILE phase=target us=197648 tokens=5 output=1
+2.17.673.972 I srv        decode: SPEC_PROFILE phase=process us=528 tokens=5
+2.17.690.161 I srv    pre_decode: SPEC_PROFILE phase=draft us=14404 slots=1
+2.17.887.029 I srv        decode: SPEC_PROFILE phase=target us=196826 tokens=5 output=1
+2.17.887.572 I srv        decode: SPEC_PROFILE phase=process us=540 tokens=5
+2.17.904.277 I srv    pre_decode: SPEC_PROFILE phase=draft us=14923 slots=1
+2.18.100.638 I srv        decode: SPEC_PROFILE phase=target us=196321 tokens=5 output=1
+2.18.101.251 I srv        decode: SPEC_PROFILE phase=process us=610 tokens=5
+2.18.116.482 I srv    pre_decode: SPEC_PROFILE phase=draft us=13923 slots=1
+2.18.313.978 I srv        decode: SPEC_PROFILE phase=target us=197447 tokens=5 output=1
+2.18.314.489 I srv        decode: SPEC_PROFILE phase=process us=508 tokens=5
+2.18.329.879 I srv    pre_decode: SPEC_PROFILE phase=draft us=13872 slots=1
+2.18.526.943 I srv        decode: SPEC_PROFILE phase=target us=197026 tokens=5 output=1
+2.18.527.530 I srv        decode: SPEC_PROFILE phase=process us=584 tokens=5
+2.18.529.243 I slot print_timing: id  0 | task 280 | n_gen =    353, tg =  15.53 t/s, tg_3s =  16.21 t/s
+2.18.543.695 I srv    pre_decode: SPEC_PROFILE phase=draft us=14437 slots=1
+2.18.740.070 I srv        decode: SPEC_PROFILE phase=target us=196327 tokens=5 output=1
+2.18.740.581 I srv        decode: SPEC_PROFILE phase=process us=509 tokens=5
+2.18.758.339 I srv    pre_decode: SPEC_PROFILE phase=draft us=15962 slots=1
+2.18.955.886 I srv        decode: SPEC_PROFILE phase=target us=197501 tokens=5 output=1
+2.18.956.580 I srv        decode: SPEC_PROFILE phase=process us=690 tokens=5
+2.18.973.847 I srv    pre_decode: SPEC_PROFILE phase=draft us=14812 slots=1
+2.19.171.023 I srv        decode: SPEC_PROFILE phase=target us=197134 tokens=5 output=1
+2.19.171.542 I srv        decode: SPEC_PROFILE phase=process us=515 tokens=5
+2.19.186.809 I srv    pre_decode: SPEC_PROFILE phase=draft us=13988 slots=1
+2.19.384.403 I srv        decode: SPEC_PROFILE phase=target us=197554 tokens=5 output=1
+2.19.385.080 I srv        decode: SPEC_PROFILE phase=process us=673 tokens=5
+2.19.401.910 I srv    pre_decode: SPEC_PROFILE phase=draft us=15029 slots=1
+2.19.597.509 I srv        decode: SPEC_PROFILE phase=target us=195553 tokens=5 output=1
+2.19.598.206 I srv        decode: SPEC_PROFILE phase=process us=693 tokens=5
+2.19.615.056 I srv    pre_decode: SPEC_PROFILE phase=draft us=15079 slots=1
+2.19.812.434 I srv        decode: SPEC_PROFILE phase=target us=197324 tokens=5 output=1
+2.19.813.013 I srv        decode: SPEC_PROFILE phase=process us=575 tokens=5
+2.19.828.320 I srv    pre_decode: SPEC_PROFILE phase=draft us=14032 slots=1
+2.20.025.564 I srv        decode: SPEC_PROFILE phase=target us=197207 tokens=5 output=1
+2.20.026.189 I srv        decode: SPEC_PROFILE phase=process us=623 tokens=5
+2.20.041.433 I srv    pre_decode: SPEC_PROFILE phase=draft us=14181 slots=1
+2.20.238.430 I srv        decode: SPEC_PROFILE phase=target us=196949 tokens=5 output=1
+2.20.239.069 I srv        decode: SPEC_PROFILE phase=process us=635 tokens=5
+2.20.256.217 I srv    pre_decode: SPEC_PROFILE phase=draft us=15860 slots=1
+2.20.453.400 I srv        decode: SPEC_PROFILE phase=target us=197127 tokens=5 output=1
+2.20.454.093 I srv        decode: SPEC_PROFILE phase=process us=691 tokens=5
+2.20.471.924 I srv    pre_decode: SPEC_PROFILE phase=draft us=15937 slots=1
+2.20.668.798 I srv        decode: SPEC_PROFILE phase=target us=196826 tokens=5 output=1
+2.20.669.347 I srv        decode: SPEC_PROFILE phase=process us=545 tokens=5
+2.20.685.250 I srv    pre_decode: SPEC_PROFILE phase=draft us=14818 slots=1
+2.20.882.049 I srv        decode: SPEC_PROFILE phase=target us=196760 tokens=5 output=1
+2.20.882.668 I srv        decode: SPEC_PROFILE phase=process us=616 tokens=5
+2.20.897.879 I srv    pre_decode: SPEC_PROFILE phase=draft us=13937 slots=1
+2.21.095.838 I srv        decode: SPEC_PROFILE phase=target us=197906 tokens=5 output=1
+2.21.096.614 I srv        decode: SPEC_PROFILE phase=process us=773 tokens=5
+2.21.112.865 I srv    pre_decode: SPEC_PROFILE phase=draft us=14972 slots=1
+2.21.319.341 I srv        decode: SPEC_PROFILE phase=target us=206437 tokens=5 output=1
+2.21.319.879 I srv        decode: SPEC_PROFILE phase=process us=535 tokens=5
+2.21.336.898 I srv    pre_decode: SPEC_PROFILE phase=draft us=15424 slots=1
+2.21.547.884 I srv        decode: SPEC_PROFILE phase=target us=210942 tokens=5 output=1
+2.21.548.502 I srv        decode: SPEC_PROFILE phase=process us=614 tokens=5
+2.21.550.029 I slot print_timing: id  0 | task 280 | n_gen =    403, tg =  15.65 t/s, tg_3s =  16.55 t/s
+2.21.565.738 I srv    pre_decode: SPEC_PROFILE phase=draft us=15693 slots=1
+2.21.762.261 I srv        decode: SPEC_PROFILE phase=target us=196480 tokens=5 output=1
+2.21.762.819 I srv        decode: SPEC_PROFILE phase=process us=554 tokens=5
+2.21.779.113 I srv    pre_decode: SPEC_PROFILE phase=draft us=14717 slots=1
+2.21.976.931 I srv        decode: SPEC_PROFILE phase=target us=197778 tokens=5 output=1
+2.21.977.511 I srv        decode: SPEC_PROFILE phase=process us=576 tokens=5
+2.21.992.959 I srv    pre_decode: SPEC_PROFILE phase=draft us=13894 slots=1
+2.22.190.394 I srv        decode: SPEC_PROFILE phase=target us=197395 tokens=5 output=1
+2.22.191.015 I srv        decode: SPEC_PROFILE phase=process us=619 tokens=5
+2.22.207.693 I srv    pre_decode: SPEC_PROFILE phase=draft us=14973 slots=1
+2.22.404.006 I srv        decode: SPEC_PROFILE phase=target us=196277 tokens=5 output=1
+2.22.404.910 I srv        decode: SPEC_PROFILE phase=process us=900 tokens=5
+2.22.420.916 I srv    pre_decode: SPEC_PROFILE phase=draft us=14216 slots=1
+2.22.618.716 I srv        decode: SPEC_PROFILE phase=target us=197761 tokens=5 output=1
+2.22.619.368 I srv        decode: SPEC_PROFILE phase=process us=647 tokens=5
+2.22.634.713 I srv    pre_decode: SPEC_PROFILE phase=draft us=14585 slots=1
+2.22.832.254 I srv        decode: SPEC_PROFILE phase=target us=197483 tokens=5 output=1
+2.22.832.923 I srv        decode: SPEC_PROFILE phase=process us=664 tokens=5
+2.22.848.639 I srv    pre_decode: SPEC_PROFILE phase=draft us=14723 slots=1
+2.23.045.591 I srv        decode: SPEC_PROFILE phase=target us=196898 tokens=5 output=1
+2.23.046.174 I srv        decode: SPEC_PROFILE phase=process us=580 tokens=5
+2.23.063.643 I srv    pre_decode: SPEC_PROFILE phase=draft us=16359 slots=1
+2.23.259.703 I srv        decode: SPEC_PROFILE phase=target us=196016 tokens=5 output=1
+2.23.260.261 I srv        decode: SPEC_PROFILE phase=process us=555 tokens=5
+2.23.276.322 I srv    pre_decode: SPEC_PROFILE phase=draft us=15249 slots=1
+2.23.474.706 I srv        decode: SPEC_PROFILE phase=target us=198342 tokens=5 output=1
+2.23.475.276 I srv        decode: SPEC_PROFILE phase=process us=566 tokens=5
+2.23.490.565 I srv    pre_decode: SPEC_PROFILE phase=draft us=13984 slots=1
+2.23.688.431 I srv        decode: SPEC_PROFILE phase=target us=197827 tokens=5 output=1
+2.23.689.074 I srv        decode: SPEC_PROFILE phase=process us=639 tokens=5
+2.23.705.378 I srv    pre_decode: SPEC_PROFILE phase=draft us=15040 slots=1
+2.23.900.806 I srv        decode: SPEC_PROFILE phase=target us=195371 tokens=5 output=1
+2.23.901.350 I srv        decode: SPEC_PROFILE phase=process us=541 tokens=5
+2.23.917.772 I srv    pre_decode: SPEC_PROFILE phase=draft us=15501 slots=1
+2.24.115.636 I srv        decode: SPEC_PROFILE phase=target us=197823 tokens=5 output=1
+2.24.116.242 I srv        decode: SPEC_PROFILE phase=process us=602 tokens=5
+2.24.131.519 I srv    pre_decode: SPEC_PROFILE phase=draft us=14256 slots=1
+2.24.329.269 I srv        decode: SPEC_PROFILE phase=target us=197713 tokens=5 output=1
+2.24.329.773 I srv        decode: SPEC_PROFILE phase=process us=501 tokens=5
+2.24.345.158 I srv    pre_decode: SPEC_PROFILE phase=draft us=13937 slots=1
+2.24.542.424 I srv        decode: SPEC_PROFILE phase=target us=197215 tokens=5 output=1
+2.24.543.058 I srv        decode: SPEC_PROFILE phase=process us=631 tokens=5
+2.24.560.738 I srv    pre_decode: SPEC_PROFILE phase=draft us=15896 slots=1
+2.24.756.886 I srv        decode: SPEC_PROFILE phase=target us=196102 tokens=5 output=1
+2.24.757.551 I srv        decode: SPEC_PROFILE phase=process us=661 tokens=5
+2.24.759.303 I slot print_timing: id  0 | task 280 | n_gen =    449, tg =  15.51 t/s, tg_3s =  14.33 t/s
+2.24.775.142 I srv    pre_decode: SPEC_PROFILE phase=draft us=15771 slots=1
+2.24.972.819 I srv        decode: SPEC_PROFILE phase=target us=197632 tokens=5 output=1
+2.24.973.344 I srv        decode: SPEC_PROFILE phase=process us=521 tokens=5
+2.24.988.743 I srv    pre_decode: SPEC_PROFILE phase=draft us=13831 slots=1
+2.25.190.514 I srv        decode: SPEC_PROFILE phase=target us=201733 tokens=5 output=1
+2.25.191.024 I srv        decode: SPEC_PROFILE phase=process us=507 tokens=5
+2.25.207.065 I srv    pre_decode: SPEC_PROFILE phase=draft us=14739 slots=1
+2.25.409.642 I srv        decode: SPEC_PROFILE phase=target us=202535 tokens=5 output=1
+2.25.410.218 I srv        decode: SPEC_PROFILE phase=process us=573 tokens=5
+2.25.425.557 I srv    pre_decode: SPEC_PROFILE phase=draft us=14271 slots=1
+2.25.624.553 I srv        decode: SPEC_PROFILE phase=target us=198953 tokens=5 output=1
+2.25.625.166 I srv        decode: SPEC_PROFILE phase=process us=610 tokens=5
+2.25.640.491 I srv    pre_decode: SPEC_PROFILE phase=draft us=14503 slots=1
+2.25.838.223 I srv        decode: SPEC_PROFILE phase=target us=197684 tokens=5 output=1
+2.25.838.801 I srv        decode: SPEC_PROFILE phase=process us=576 tokens=5
+2.25.855.330 I srv    pre_decode: SPEC_PROFILE phase=draft us=15520 slots=1
+2.26.053.419 I srv        decode: SPEC_PROFILE phase=target us=198042 tokens=5 output=1
+2.26.054.101 I srv        decode: SPEC_PROFILE phase=process us=679 tokens=5
+2.26.070.804 I srv    pre_decode: SPEC_PROFILE phase=draft us=14720 slots=1
+2.26.267.822 I srv        decode: SPEC_PROFILE phase=target us=196974 tokens=5 output=1
+2.26.268.359 I srv        decode: SPEC_PROFILE phase=process us=533 tokens=5
+2.26.284.485 I srv    pre_decode: SPEC_PROFILE phase=draft us=15314 slots=1
+2.26.482.209 I srv        decode: SPEC_PROFILE phase=target us=197685 tokens=5 output=1
+2.26.482.713 I srv        decode: SPEC_PROFILE phase=process us=501 tokens=5
+2.26.498.540 I srv    pre_decode: SPEC_PROFILE phase=draft us=14540 slots=1
+2.26.695.962 I srv        decode: SPEC_PROFILE phase=target us=197381 tokens=5 output=1
+2.26.696.526 I srv        decode: SPEC_PROFILE phase=process us=562 tokens=5
+2.26.713.125 I srv    pre_decode: SPEC_PROFILE phase=draft us=15278 slots=1
+2.26.910.641 I srv        decode: SPEC_PROFILE phase=target us=197474 tokens=5 output=1
+2.26.911.236 I srv        decode: SPEC_PROFILE phase=process us=591 tokens=5
+2.26.926.551 I srv    pre_decode: SPEC_PROFILE phase=draft us=14290 slots=1
+2.27.124.981 I srv        decode: SPEC_PROFILE phase=target us=198376 tokens=5 output=1
+2.27.125.558 I srv        decode: SPEC_PROFILE phase=process us=574 tokens=5
+2.27.140.874 I srv    pre_decode: SPEC_PROFILE phase=draft us=14481 slots=1
+2.27.339.186 I srv        decode: SPEC_PROFILE phase=target us=198274 tokens=5 output=1
+2.27.339.788 I srv        decode: SPEC_PROFILE phase=process us=600 tokens=5
+2.27.356.321 I srv    pre_decode: SPEC_PROFILE phase=draft us=15770 slots=1
+2.27.553.335 I srv        decode: SPEC_PROFILE phase=target us=196946 tokens=5 output=1
+2.27.553.842 I srv        decode: SPEC_PROFILE phase=process us=504 tokens=5
+2.27.570.392 I srv    pre_decode: SPEC_PROFILE phase=draft us=15316 slots=1
+2.27.768.664 I srv        decode: SPEC_PROFILE phase=target us=198226 tokens=5 output=1
+2.27.769.226 I srv        decode: SPEC_PROFILE phase=process us=559 tokens=5
+2.27.770.782 I slot print_timing: id  0 | task 280 | n_gen =    484, tg =  15.14 t/s, tg_3s =  11.62 t/s
+2.27.785.514 I srv    pre_decode: SPEC_PROFILE phase=draft us=14719 slots=1
+2.27.983.349 I srv        decode: SPEC_PROFILE phase=target us=197794 tokens=5 output=1
+2.27.983.890 I srv        decode: SPEC_PROFILE phase=process us=537 tokens=5
+2.27.999.233 I srv    pre_decode: SPEC_PROFILE phase=draft us=14559 slots=1
+2.28.197.480 I srv        decode: SPEC_PROFILE phase=target us=198195 tokens=5 output=1
+2.28.198.016 I srv        decode: SPEC_PROFILE phase=process us=533 tokens=5
+2.28.214.399 I srv    pre_decode: SPEC_PROFILE phase=draft us=15624 slots=1
+2.28.411.311 I srv        decode: SPEC_PROFILE phase=target us=196875 tokens=5 output=1
+2.28.411.901 I srv        decode: SPEC_PROFILE phase=process us=587 tokens=5
+2.28.428.643 I srv    pre_decode: SPEC_PROFILE phase=draft us=14951 slots=1
+2.28.627.335 I srv        decode: SPEC_PROFILE phase=target us=198639 tokens=5 output=1
+2.28.627.913 I srv        decode: SPEC_PROFILE phase=process us=576 tokens=5
+2.28.643.514 I srv    pre_decode: SPEC_PROFILE phase=draft us=13854 slots=1
+2.28.841.226 I srv        decode: SPEC_PROFILE phase=target us=197675 tokens=5 output=1
+2.28.841.737 I srv        decode: SPEC_PROFILE phase=process us=508 tokens=5
+2.28.857.419 I srv    pre_decode: SPEC_PROFILE phase=draft us=13954 slots=1
+2.29.056.592 I srv        decode: SPEC_PROFILE phase=target us=199085 tokens=5 output=1
+2.29.057.116 I srv        decode: SPEC_PROFILE phase=process us=522 tokens=5
+2.29.073.541 I srv    pre_decode: SPEC_PROFILE phase=draft us=15145 slots=1
+2.29.270.502 I srv        decode: SPEC_PROFILE phase=target us=196922 tokens=5 output=1
+2.29.271.117 I srv        decode: SPEC_PROFILE phase=process us=612 tokens=5
+2.29.286.471 I srv    pre_decode: SPEC_PROFILE phase=draft us=14604 slots=1
+2.29.484.555 I srv        decode: SPEC_PROFILE phase=target us=198042 tokens=5 output=1
+2.29.485.271 I srv        decode: SPEC_PROFILE phase=process us=711 tokens=5
+2.29.500.733 I srv    pre_decode: SPEC_PROFILE phase=draft us=13932 slots=1
+2.29.684.363 I srv        decode: SPEC_PROFILE phase=target us=183590 tokens=3 output=1
+2.29.684.805 I srv        decode: SPEC_PROFILE phase=process us=440 tokens=3
+2.29.700.844 I srv    pre_decode: SPEC_PROFILE phase=draft us=15286 slots=1
+2.29.874.964 I srv        decode: SPEC_PROFILE phase=target us=174080 tokens=2 output=1
+2.29.875.429 I srv        decode: SPEC_PROFILE phase=process us=462 tokens=2
+2.30.018.335 I srv        decode: SPEC_PROFILE phase=target us=142137 tokens=1 output=1
+2.30.018.842 I srv        decode: SPEC_PROFILE phase=process us=504 tokens=1
+2.30.019.303 I slot print_timing: id  0 | task 280 | prompt eval time =     546.03 ms /    56 tokens (    9.75 ms per token,   102.56 tokens per second)
+2.30.019.305 I slot print_timing: id  0 | task 280 |        eval time =   34153.22 ms /   512 tokens (   66.84 ms per token,    14.96 tokens per second)
+2.30.019.306 I slot print_timing: id  0 | task 280 |       total time =   34699.26 ms /   568 tokens
+2.30.019.307 I slot print_timing: id  0 | task 280 |    graphs reused =        411
+2.30.019.310 I slot print_timing: id  0 | task 280 | draft acceptance = 0.55626 (  351 accepted /   631 generated), mean len =  3.21
+2.30.019.333 I slot      release: id  0 | task 280 | stop processing: n_tokens = 567, truncated = 0
+2.34.280.112 I srv    operator(): operator(): cleaning up before exit...

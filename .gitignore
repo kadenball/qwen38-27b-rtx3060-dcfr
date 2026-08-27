@@ -1,0 +1,15 @@
+/build/
+/models/
+/third_party/
+*.gguf
+*.gguf.*
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+*.pem
+*.key
+.env
+.env.*
+!.env.example
