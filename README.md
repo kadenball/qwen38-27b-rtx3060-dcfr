@@ -13,6 +13,11 @@ This is a narrow, disclosed record-candidate result—not a claim that every
 prompt runs above 30 tokens/s. Comparisons across quantizations, allocated
 contexts, prompts, sampling, and runtimes are not apples-to-apples.
 
+An additional prompt-ingestion sweep improved an 8,595-token RVN IQ3 prompt
+from **82.13 to 320.24 prompt tokens/s** on the same RTX 3060 by increasing the
+batch and microbatch from 16/16 to a VRAM-safe 128/128. This is a separate
+prefill result; it does not change the original generation-throughput claim.
+
 ## Results
 
 | Workload | Output | Accepted / drafted | Generated tokens/s |
@@ -84,7 +89,10 @@ used by the expensive verifier.
 - `scripts/build.sh`: fetches the pinned source, applies the patch, and builds
   the CUDA runtime.
 - `scripts/serve.sh`: launches the disclosed 64K Turbo configuration.
-- `benchmarks/*.json`: machine-readable measurements and rejected variants.
+- `scripts/serve-rvn-q3.sh`: launches the RVN depth-4 or depth-8 profile with
+  a fast-prefill workspace by default.
+- `benchmarks/*.json`: machine-readable generation, memory, and prompt-prefill
+  measurements, including rejected variants.
 - `benchmarks/raw/`: two server logs for the fixed MTP4 A/B.
 
 The patch changes 24 upstream files with 2,105 insertions and 120 deletions.
@@ -126,6 +134,58 @@ The server listens only on `127.0.0.1` by default. Set `PORT` to choose another
 local port. Other 12 GB cards may require reducing placement because the
 measured graph had only about 105 MiB of post-capture headroom.
 
+## Fast prompt ingestion
+
+The original record profile deliberately used a 16-token batch and microbatch
+to maximize VRAM available for target-model placement and speculative depth.
+That is useful for generation experiments but unnecessarily slow when a chat
+client must ingest thousands of tokens before producing its first token.
+
+On the RVN IQ3 64K depth-4 profile, increasing both values produced this
+single-run long-prompt comparison:
+
+| Batch / microbatch | Prompt tokens | Prompt speed | Prompt time | Generation speed | Physical VRAM free |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 16 / 16 | 8,595 | 82.13 tok/s | 104.65 s | 16.12 tok/s | 549 MiB |
+| **128 / 128** | 8,595 | **320.24 tok/s** | **26.84 s** | 14.40 tok/s | 449 MiB |
+| 256 / 256 | 8,595 | 377.09 tok/s | 22.79 s | 13.57 tok/s | 385 MiB |
+
+The selected 128/128 setting is **3.90x faster at prefill** than 16/16 and
+saves about 78 seconds on this prompt while retaining 100 MiB more physical
+headroom than 256/256. A separate production-router verification processed a
+2,067-token prompt at 311.72 prompt tok/s and generated at 16.52 tok/s.
+
+A 512/512 short-prompt test reached 392.88 prompt tok/s but left only 235 MiB
+free, so it was rejected as a display-attached RTX 3060 default. Larger is not
+automatically better: stop increasing the microbatch when the speed gain gets
+small or physical VRAM headroom becomes unsafe.
+
+The long-prompt rows are one run each. Prompt content, generated content, and
+draft acceptance can change slightly with batching because the runtime's
+batched floating-point evaluation is not bit-identical. The defensible result
+is the measured prefill improvement; the generation figures are included for
+visibility, not presented as a controlled decode-speed A/B.
+
+For the tested RVN placement, use the new default:
+
+```bash
+MODEL_PATH=/path/to/RVN-IQ3_XXS-multilingual-mtp.gguf \
+MTP_DEPTH=4 \
+BATCH_SIZE=128 UBATCH_SIZE=128 \
+./scripts/serve-rvn-q3.sh
+```
+
+To reproduce the earlier 35-run generation suite exactly, restore its smaller
+workspace:
+
+```bash
+BATCH_SIZE=16 UBATCH_SIZE=16 \
+MODEL_PATH=/path/to/RVN-IQ3_XXS-multilingual-mtp.gguf \
+MTP_DEPTH=4 ./scripts/serve-rvn-q3.sh
+```
+
+The full sweep is recorded in `benchmarks/fast-prefill-20260828.json`.
+
 ## Validated RVN IQ3 Zterm presets
 
 Two additional 64K profiles were validated for the RVN uncensored multilingual
@@ -134,8 +194,10 @@ the RVN file is a separate checkpoint, pinned here as
 `RVN-IQ3_XXS-multilingual-mtp.gguf` with SHA-256
 `338955bd8d67908afb4093b8a7b386dcfcd6eb6184a2171e5d6731c1d296abf6`.
 
-Both profiles use D-CFR, Q4_0 K/V, batch/microbatch 16/16, 47 normal GPU
-layers, and explicit CUDA placement for target blocks 10 through 16.
+Both generation-validation profiles used D-CFR, Q4_0 K/V,
+batch/microbatch 16/16, 47 normal GPU layers, and explicit CUDA placement for
+target blocks 10 through 16. The launcher now defaults to the separately
+measured 128/128 fast-prefill workspace described above.
 
 | Profile | MTP depth | 35-run mean | Non-easy mean | Full range | Acceptance | Peak GPU |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -187,8 +249,10 @@ that complication.
 
 For every tier:
 
-1. Start with batch and microbatch 16, Flash Attention enabled, one parallel
-   sequence, and CPU threads equal to physical CPU cores.
+1. Start with batch and microbatch 128 on a 12 GB Q3 profile, Flash Attention
+   enabled, one parallel sequence, and CPU threads equal to physical CPU
+   cores. Try 256 on a 16 GB card and 512 on a 24 GB or larger card, but treat
+   those larger-card values as untested starting points rather than results.
 2. Keep all weights on the GPU when possible. If they do not fit, use the
    smallest CPU/RAM spill that starts reliably; RAM offload normally trades
    speed for capacity.

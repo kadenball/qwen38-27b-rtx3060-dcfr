@@ -6,6 +6,8 @@ llama_server="${LLAMA_SERVER:-$repo_root/third_party/llama.cpp/build-cuda/bin/ll
 model_path="${MODEL_PATH:-}"
 mtp_depth="${MTP_DEPTH:-4}"
 threads="${THREADS:-6}"
+batch_size="${BATCH_SIZE:-128}"
+ubatch_size="${UBATCH_SIZE:-128}"
 host="${HOST:-127.0.0.1}"
 port="${PORT:-8080}"
 
@@ -21,6 +23,14 @@ case "$mtp_depth" in
         exit 2
         ;;
 esac
+
+for value_name in batch_size ubatch_size; do
+    value="${!value_name}"
+    if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
+        echo "${value_name} must be a positive integer." >&2
+        exit 2
+    fi
+done
 
 for required_file in "$llama_server" "$model_path"; do
     if [[ ! -f "$required_file" ]]; then
@@ -43,7 +53,7 @@ exec "$llama_server" \
     --override-tensor 'blk\.(10|11|12|13|14|15|16)\..*=CUDA0' \
     --load-mode none \
     -ctk q4_0 -ctv q4_0 \
-    -b 16 -ub 16 \
+    -b "$batch_size" -ub "$ubatch_size" \
     -t "$threads" -tb "$threads" \
     --spec-type draft-mtp \
     --spec-draft-n-max "$mtp_depth" \

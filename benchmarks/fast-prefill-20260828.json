@@ -1,0 +1,119 @@
+{
+  "title": "RVN IQ3 64K fast-prefill sweep",
+  "date_utc": "2026-08-28",
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 3060 12 GB",
+    "cpu": "Intel Core i5-12400",
+    "system_ram_gib": 15
+  },
+  "model": {
+    "filename": "RVN-IQ3_XXS-multilingual-mtp.gguf",
+    "sha256": "338955bd8d67908afb4093b8a7b386dcfcd6eb6184a2171e5d6731c1d296abf6"
+  },
+  "fixed_configuration": {
+    "context_tokens": 65536,
+    "kv_cache": "q4_0 K/V",
+    "mtp_depth": 4,
+    "draft_p_min": 0,
+    "cpu_threads": 6,
+    "normal_gpu_layers": 47,
+    "explicit_cuda_blocks": "10 through 16",
+    "flash_attention": true,
+    "dcfr_enabled": true,
+    "prompt_cache": false,
+    "temperature": 0
+  },
+  "long_prompt_comparison": {
+    "prompt_tokens": 8595,
+    "requested_generation_tokens": 96,
+    "runs_per_cell": 1,
+    "cells": [
+      {
+        "batch_size": 16,
+        "microbatch_size": 16,
+        "prompt_ms": 104654.937,
+        "prompt_tokens_per_second": 82.12703811574603,
+        "generation_tokens_per_second": 16.120077267772473,
+        "draft_generated": 112,
+        "draft_accepted": 66,
+        "physical_gpu_free_mib": 549,
+        "selected": false
+      },
+      {
+        "batch_size": 128,
+        "microbatch_size": 128,
+        "prompt_ms": 26839.146,
+        "prompt_tokens_per_second": 320.2411880020325,
+        "generation_tokens_per_second": 14.404299577286876,
+        "draft_generated": 126,
+        "draft_accepted": 63,
+        "physical_gpu_free_mib": 449,
+        "selected": true
+      },
+      {
+        "batch_size": 256,
+        "microbatch_size": 256,
+        "prompt_ms": 22793.063,
+        "prompt_tokens_per_second": 377.0884150146911,
+        "generation_tokens_per_second": 13.569445493894248,
+        "draft_generated": 132,
+        "draft_accepted": 61,
+        "physical_gpu_free_mib": 385,
+        "selected": false
+      }
+    ]
+  },
+  "short_prompt_sweep": {
+    "prompt_tokens": 2067,
+    "requested_generation_tokens": 96,
+    "runs_per_cell": 1,
+    "cells": [
+      {
+        "batch_size": 32,
+        "microbatch_size": 32,
+        "prompt_tokens_per_second": 142.82526900313698,
+        "generation_tokens_per_second": 16.109498465527878,
+        "physical_gpu_free_mib": 537
+      },
+      {
+        "batch_size": 64,
+        "microbatch_size": 64,
+        "prompt_tokens_per_second": 226.57087771716522,
+        "generation_tokens_per_second": 16.523724851108195,
+        "physical_gpu_free_mib": 519
+      },
+      {
+        "batch_size": 128,
+        "microbatch_size": 128,
+        "prompt_tokens_per_second": 310.8635766095236,
+        "generation_tokens_per_second": 16.45132460004665,
+        "physical_gpu_free_mib": 449
+      },
+      {
+        "batch_size": 256,
+        "microbatch_size": 256,
+        "prompt_tokens_per_second": 362.7930536802082,
+        "generation_tokens_per_second": 16.44557182205337,
+        "physical_gpu_free_mib": 385
+      },
+      {
+        "batch_size": 512,
+        "microbatch_size": 512,
+        "prompt_tokens_per_second": 392.8795849731826,
+        "generation_tokens_per_second": 15.976547101551642,
+        "physical_gpu_free_mib": 235,
+        "rejected_reason": "Insufficient display-attached GPU headroom for a daily default"
+      }
+    ]
+  },
+  "production_router_verification": {
+    "batch_size": 128,
+    "microbatch_size": 128,
+    "prompt_tokens": 2067,
+    "generated_tokens": 96,
+    "prompt_tokens_per_second": 311.7220615520622,
+    "generation_tokens_per_second": 16.522425888658674,
+    "physical_gpu_free_mib": 449
+  },
+  "interpretation": "The 128/128 workspace is the balanced RTX 3060 default: 3.90x the 16/16 long-prompt prefill rate with 449 MiB physical VRAM free. Larger workspaces are faster but leave less display and graph-capture headroom. Decode figures are disclosed but are not a controlled generation A/B because batch-dependent floating-point differences changed output and MTP acceptance in single runs."
+}
