@@ -126,6 +126,47 @@ The server listens only on `127.0.0.1` by default. Set `PORT` to choose another
 local port. Other 12 GB cards may require reducing placement because the
 measured graph had only about 105 MiB of post-capture headroom.
 
+## Recommended community hardware tests
+
+The published `scripts/serve.sh` is the exact measured RTX 3060 profile, not a
+universal auto-tuner. For another GPU, begin with the conservative row below,
+confirm that the server is stable, and change only one variable at a time.
+
+| GPU VRAM | Starting quant | Starting context | KV cache | Initial MTP depth | Suggested next test | Status |
+| ---: | --- | ---: | --- | ---: | --- | --- |
+| 12 GB | `UD-IQ3_XXS` (10.9 GB) | 65,536 | Q4_0 K/V | 4 | Depth 6 if at least 300 MiB remains free | Tested on RTX 3060 at depth 6; other cards untested |
+| 16 GB | `UD-IQ4_XS` (14.3 GB) | 32,768 | Q4_0 K/V | 4 | 64K context, then depths 6 and 8 | Recommended candidate; untested here |
+| 20 GB | `UD-Q4_K_M` (16.5 GB) | 65,536 | Q4_0 K/V | 4 | Depths 6 and 8 | Recommended candidate; untested here |
+| 24 GB | `UD-Q5_K_M` (19.8 GB) | 65,536 | Q4_0 K/V | 4 | Depths 6 and 8, then longer context | Recommended candidate; untested here |
+| 32 GB | `UD-Q6_K_XL` (25.3 GB) | 65,536 | Q4_0 K/V | 4 | Depths 6, 8, and 10 | Recommended candidate; untested here |
+| 48 GB+ | `Q8_0` (29.0 GB) | 65,536 | Q4_0 K/V | 4 | Depth sweep before increasing context | Recommended candidate; untested here |
+
+Quant sizes refer to the
+[Unsloth Qwen3.8-27B GGUF repository](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF).
+Use the exact same checkpoint and hash when comparing configurations. Quants
+smaller than `UD-Q2_K_XL` may require the separate MTP file; the table avoids
+that complication.
+
+For every tier:
+
+1. Start with batch and microbatch 16, Flash Attention enabled, one parallel
+   sequence, and CPU threads equal to physical CPU cores.
+2. Keep all weights on the GPU when possible. If they do not fit, use the
+   smallest CPU/RAM spill that starts reliably; RAM offload normally trades
+   speed for capacity.
+3. Leave 300-500 MiB of VRAM free, and more on a display-attached GPU. Reduce
+   context or MTP depth first if graph capture fails or the process OOMs.
+4. Sweep MTP depth on a representative workload. A deeper draft is not
+   automatically faster when acceptance is low.
+5. Report GPU, driver/runtime, quant filename and SHA-256, allocated context,
+   sampling parameters, prompt and generated token counts, generated tokens/s,
+   accepted/drafted tokens, peak VRAM, and any RAM offload.
+
+For a publishable comparison, use the same nontrivial prompts and seeds for
+each depth, run each cell five times, and report the mean and full range rather
+than only the fastest sample. These rows are starting hypotheses, not measured
+performance claims.
+
 ## Benchmark evidence and limitations
 
 The JSON files preserve exact speeds, memory measurements, draft acceptance,
