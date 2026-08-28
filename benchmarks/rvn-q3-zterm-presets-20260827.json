@@ -1,0 +1,87 @@
+{
+  "title": "RVN IQ3 64K Zterm preset validation",
+  "date_utc": "2026-08-27",
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 3060 12 GB",
+    "cpu": "Intel Core i5-12400",
+    "system_ram_gib": 15
+  },
+  "model": {
+    "filename": "RVN-IQ3_XXS-multilingual-mtp.gguf",
+    "sha256": "338955bd8d67908afb4093b8a7b386dcfcd6eb6184a2171e5d6731c1d296abf6",
+    "note": "This is a separate checkpoint from the Unsloth UD-IQ3_XXS model used for the original record-candidate result."
+  },
+  "shared_configuration": {
+    "context_tokens": 65536,
+    "kv_cache": "q4_0 K/V",
+    "batch_size": 16,
+    "microbatch_size": 16,
+    "cpu_threads": 6,
+    "normal_gpu_layers": 47,
+    "explicit_cuda_blocks": "10 through 16",
+    "draft_p_min": 0,
+    "flash_attention": true,
+    "dcfr_enabled": true
+  },
+  "method": {
+    "prompts": 7,
+    "categories": [
+      "easy sanity anchor",
+      "unfamiliar code",
+      "multi-step reasoning",
+      "factual recall",
+      "prose continuation"
+    ],
+    "runs_per_prompt": 5,
+    "output_tokens_per_run": 256,
+    "total_measured_runs_per_depth": 35,
+    "sampling": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "top_k": 40,
+      "min_p": 0.05,
+      "seeds": "101 through 105"
+    }
+  },
+  "profiles": [
+    {
+      "name": "default",
+      "mtp_depth": 4,
+      "peak_gpu_used_mib": 11330,
+      "all_prompts": {
+        "generation_tokens_per_second_mean": 17.270,
+        "generation_tokens_per_second_min": 11.490,
+        "generation_tokens_per_second_max": 25.072,
+        "aggregate_acceptance_rate": 0.5657,
+        "token_weighted_prompt_tokens_per_second": 67.632
+      },
+      "non_easy_prompts": {
+        "runs": 30,
+        "generation_tokens_per_second_mean": 15.982,
+        "generation_tokens_per_second_min": 11.490,
+        "generation_tokens_per_second_max": 21.497,
+        "aggregate_acceptance_rate": 0.5213
+      }
+    },
+    {
+      "name": "deep-draft-experimental",
+      "mtp_depth": 8,
+      "peak_gpu_used_mib": 11342,
+      "all_prompts": {
+        "generation_tokens_per_second_mean": 19.020,
+        "generation_tokens_per_second_min": 10.038,
+        "generation_tokens_per_second_max": 36.953,
+        "aggregate_acceptance_rate": 0.3505,
+        "token_weighted_prompt_tokens_per_second": 66.138
+      },
+      "non_easy_prompts": {
+        "runs": 30,
+        "generation_tokens_per_second_mean": 16.044,
+        "generation_tokens_per_second_min": 10.038,
+        "generation_tokens_per_second_max": 25.727,
+        "aggregate_acceptance_rate": 0.3100
+      }
+    }
+  ],
+  "interpretation": "Depth 8 is much faster on the easy anchor but only 0.4% faster than depth 4 on the 30 non-easy runs, with a lower minimum and substantially more rejected draft work. Depth 4 is therefore the default; depth 8 is an optional workload-dependent profile."
+}

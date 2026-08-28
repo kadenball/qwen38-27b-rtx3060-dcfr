@@ -126,6 +126,44 @@ The server listens only on `127.0.0.1` by default. Set `PORT` to choose another
 local port. Other 12 GB cards may require reducing placement because the
 measured graph had only about 105 MiB of post-capture headroom.
 
+## Validated RVN IQ3 Zterm presets
+
+Two additional 64K profiles were validated for the RVN uncensored multilingual
+MTP checkpoint. These do **not** replace or extend the original record result:
+the RVN file is a separate checkpoint, pinned here as
+`RVN-IQ3_XXS-multilingual-mtp.gguf` with SHA-256
+`338955bd8d67908afb4093b8a7b386dcfcd6eb6184a2171e5d6731c1d296abf6`.
+
+Both profiles use D-CFR, Q4_0 K/V, batch/microbatch 16/16, 47 normal GPU
+layers, and explicit CUDA placement for target blocks 10 through 16.
+
+| Profile | MTP depth | 35-run mean | Non-easy mean | Full range | Acceptance | Peak GPU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Default | 4 | 17.27 tok/s | 15.98 tok/s | 11.49-25.07 tok/s | 56.57% | 11,330 MiB |
+| Deep-draft experimental | 8 | 19.02 tok/s | 16.04 tok/s | 10.04-36.95 tok/s | 35.05% | 11,342 MiB |
+
+Each profile was run five times on seven 256-token prompts: one easy counting
+anchor plus unfamiliar code, multi-step reasoning, factual recall, and prose
+continuation. The depth-8 headline mean is lifted by the easy anchor. Across
+the 30 non-easy runs it was only 0.4% faster than depth 4, had a lower minimum,
+and performed substantially more rejected draft work. Depth 4 is therefore the
+recommended everyday default; depth 8 is a workload-dependent experiment.
+
+Run either portable preset with the same patched build:
+
+```bash
+# Everyday default
+MODEL_PATH=/path/to/RVN-IQ3_XXS-multilingual-mtp.gguf \
+MTP_DEPTH=4 ./scripts/serve-rvn-q3.sh
+
+# Optional deeper-draft profile
+MODEL_PATH=/path/to/RVN-IQ3_XXS-multilingual-mtp.gguf \
+MTP_DEPTH=8 ./scripts/serve-rvn-q3.sh
+```
+
+The aggregate measurement and exact configuration are in
+`benchmarks/rvn-q3-zterm-presets-20260827.json`.
+
 ## Recommended community hardware tests
 
 The published `scripts/serve.sh` is the exact measured RTX 3060 profile, not a
