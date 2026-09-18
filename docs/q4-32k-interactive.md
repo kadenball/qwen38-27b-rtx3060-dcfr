@@ -16,11 +16,14 @@ not a revision of the original IQ3 throughput result or a new speed record.
 
 These are measured settings, not a universal hardware recommendation. The
 runtime includes additional local head-split CUDA and IQ4_XS multi-query CPU
-optimizations. Its upstream base is
-`8242074aa015e87f9e2e10993f164e0d1ac535b1`, with local modifications.
-Those additional runtime changes are **not bundled in this release**;
-`scripts/build.sh` still builds the historical IQ3/D-CFR experiment. The base
-commit and settings alone do not reproduce the Q4 numbers below.
+optimizations, now published in `patches/llama-cpp-q4-interactive.patch` on top
+of the historical patch. The actual upstream base is
+`c060ca974c773c7c3d17fd1b66dc9d312bc292c0`. Source comparison confirmed that the
+two patches reconstruct the measured sources, including the separately loaded
+CPU/CUDA overrides. The initial report incorrectly named the parent project's
+Git revision: the vendor directory has no independent Git checkout.
+`scripts/build-q4.sh` builds the combined runtime; `scripts/build.sh` remains
+the historical IQ3/D-CFR experiment. See the [complete run guide](q4-quickstart.md).
 
 ## Short decode screening
 
@@ -84,8 +87,9 @@ Two separate adapter issues were also addressed locally:
   replace tiny fragments with larger structured summaries. Existing tool-pair
   and summary validation protections remain.
 
-Thirty local regression tests passed. These adapter changes are described here,
-not shipped as a general-purpose harness installer. Tools were not removed and
+Thirty local regression tests passed. The optional [version-pinned adapter
+patches and tests](../harness/dsh/README.md) are now included; they are not a
+general-purpose harness installer. Tools were not removed and
 reasoning was not curtailed to obtain the improvement.
 
 ## Limits and replication priorities
@@ -96,6 +100,5 @@ evaluation, repeated long-chat latency distribution, isolated kernel speedup,
 or claim that Q4 achieves the historical IQ3 30–40 tok/s figures.
 
 Useful next tests are matched prompts/outputs, more repeats, cache acceptance
-and correctness across tool turns, full-window memory stress, and a complete
-release of the additional runtime optimizations. Report cold prefill, cached
+and correctness across tool turns, and full-window memory stress. Report cold prefill, cached
 prefill, decode, acceptance, and occupied context separately.

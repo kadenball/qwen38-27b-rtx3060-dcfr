@@ -1,0 +1,30 @@
+{
+  "prompts": [
+    {
+      "name": "rust",
+      "prompt": "Implement a Rust parser for newline-delimited sensor events without external crates.\nInput is timestamp|sensor_id|reading, with optional whitespace and comment lines starting #.\nReject overflow, NaN, infinity, extra fields, and duplicate sensor IDs within one timestamp.\nReturn accepted records and structured errors with line numbers; do not stop at the first error.\nHere are unrelated helper functions already in this synthetic project for naming context:\nfn normalize_0(value: i64) -> i64 { value.saturating_mul(2).saturating_sub(0) }\nfn normalize_1(value: i64) -> i64 { value.saturating_mul(3).saturating_sub(7) }\nfn normalize_2(value: i64) -> i64 { value.saturating_mul(4).saturating_sub(14) }\nfn normalize_3(value: i64) -> i64 { value.saturating_mul(5).saturating_sub(21) }\nfn normalize_4(value: i64) -> i64 { value.saturating_mul(6).saturating_sub(28) }\nfn normalize_5(value: i64) -> i64 { value.saturating_mul(7).saturating_sub(35) }\nfn normalize_6(value: i64) -> i64 { value.saturating_mul(8).saturating_sub(42) }\nfn normalize_7(value: i64) -> i64 { value.saturating_mul(9).saturating_sub(49) }\nfn normalize_8(value: i64) -> i64 { value.saturating_mul(10).saturating_sub(56) }\nfn normalize_9(value: i64) -> i64 { value.saturating_mul(11).saturating_sub(63) }\nfn normalize_10(value: i64) -> i64 { value.saturating_mul(12).saturating_sub(70) }\nfn normalize_11(value: i64) -> i64 { value.saturating_mul(13).saturating_sub(77) }\nfn normalize_12(value: i64) -> i64 { value.saturating_mul(14).saturating_sub(84) }\nfn normalize_13(value: i64) -> i64 { value.saturating_mul(15).saturating_sub(91) }\nfn normalize_14(value: i64) -> i64 { value.saturating_mul(16).saturating_sub(98) }\nfn normalize_15(value: i64) -> i64 { value.saturating_mul(17).saturating_sub(105) }\nfn normalize_16(value: i64) -> i64 { value.saturating_mul(18).saturating_sub(112) }\nfn normalize_17(value: i64) -> i64 { value.saturating_mul(19).saturating_sub(119) }\nfn normalize_18(value: i64) -> i64 { value.saturating_mul(20).saturating_sub(126) }\nfn normalize_19(value: i64) -> i64 { value.saturating_mul(21).saturating_sub(133) }\nfn normalize_20(value: i64) -> i64 { value.saturating_mul(22).saturating_sub(140) }\nfn normalize_21(value: i64) -> i64 { value.saturating_mul(23).saturating_sub(147) }\nfn normalize_22(value: i64) -> i64 { value.saturating_mul(24).saturating_sub(154) }\nfn normalize_23(value: i64) -> i64 { value.saturating_mul(25).saturating_sub(161) }\nWrite the parser implementation and concise unit tests. Start directly with Rust code."
+    },
+    {
+      "name": "cpp",
+      "prompt": "Implement a C++20 bounded thread-safe queue supporting move-only elements. Provide push, blocking pop, try_pop, and close. Close must wake all blocked threads, allow draining existing items, and reject future pushes. Handle spurious wakeups and exceptions without deadlocks. Explain one subtle race after the implementation. Start directly with code, using only the standard library."
+    }
+  ],
+  "request_defaults": {
+    "max_tokens": 128,
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "top_k": 40,
+    "min_p": 0.05,
+    "seed": 101,
+    "cache_prompt": false,
+    "ignore_eos": true,
+    "stream": false,
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    }
+  },
+  "seeds": [
+    101,
+    102
+  ]
+}

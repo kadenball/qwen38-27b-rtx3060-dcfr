@@ -16,3 +16,12 @@ release. It contains D-CFR and the supporting recurrent-state, CUDA,
 speculative-server, profiling, packed-tree, and branch-verification work that
 was present in the measured runtime. Optional research paths are disabled
 unless their environment flags are explicitly enabled.
+
+The Q4 interactive overlay applies after that historical patch to the same
+upstream base. It includes the measured head-split CUDA attention workspace,
+AVX2 IQ4_XS dot2/multi-query CPU changes, and shallow-depth prompt-cache policy.
+The optional DSH patches modify MIT-licensed `@deepseek-ai/dsh-compaction-basic`
+and `@earendil-works/pi-ai` distributions; their upstream notices remain in the
+installed packages. No model weights or third-party compiled binaries are
+distributed here. The separate Q4 guide pins the Bartowski model revision and
+SHA-256; model license terms remain those of its publisher.

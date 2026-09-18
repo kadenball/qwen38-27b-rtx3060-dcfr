@@ -2,7 +2,7 @@
   "date": "2026-09-18",
   "model": "Qwen3.8-27B-IQ4_XS.gguf",
   "gpu": "RTX 3060 12 GB",
-  "runtime_note": "Locally modified runtime; additional optimizations not included in public historical build.",
+  "runtime_note": "Measured with local CPU/CUDA overrides; equivalent sources are now included in the separate build-q4.sh release, not the historical build.sh profile.",
   "profiles": [
     {
       "context": 20480,

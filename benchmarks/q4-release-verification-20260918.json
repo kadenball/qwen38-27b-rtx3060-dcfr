@@ -1,0 +1,34 @@
+{
+  "date": "2026-09-18",
+  "purpose": "Fresh public-source build verification, not a new performance record",
+  "upstream_revision": "c060ca974c773c7c3d17fd1b66dc9d312bc292c0",
+  "runtime_version": "b1-c060ca974c77-q4-interactive",
+  "compiler": "GNU 15.3.1",
+  "cuda_toolkit": "13.3",
+  "nvidia_driver": "595.71.05",
+  "gpu": "RTX 3060 12 GB",
+  "context": 32768,
+  "all_runtime_libraries_loaded_from_fresh_public_build": true,
+  "model_sha256_rechecked": "4b927360fa7c4aa41a734302f0795ca45df0e8b8a258bc76cc5fbf9d98a484db",
+  "cpu_bit_exact_cases": 7680,
+  "cpu_bit_exact_graph_checks": 680,
+  "attention_allocation_contracts_passed": 80,
+  "dsh_regression_tests_passed": 30,
+  "dsh_stock_package_patch_and_idempotence_verified": true,
+  "device_memory_snapshot_mib": {"used": 11383, "free": 529},
+  "chat_cache_check": {
+    "cold": {"wall_seconds": 14.795, "cached_tokens": 0, "new_prompt_tokens": 2506, "output_tokens": 7, "marker_present": true, "truncated": false},
+    "followup": {"wall_seconds": 2.599, "cached_tokens": 2514, "new_prompt_tokens": 17, "output_tokens": 7, "marker_present": true, "truncated": false}
+  },
+  "short_runs": [
+    {"prompt": "rust", "seed": 101, "output_tokens": 128, "cache_tokens": 0, "prompt_tokens": 943, "prompt_ms": 6118.123, "decode_tokens_per_second": 15.749031372566526, "accepted": 92, "drafted": 103},
+    {"prompt": "cpp", "seed": 101, "output_tokens": 128, "cache_tokens": 0, "prompt_tokens": 86, "prompt_ms": 911.363, "decode_tokens_per_second": 14.559725369186486, "accepted": 88, "drafted": 117},
+    {"prompt": "rust", "seed": 102, "output_tokens": 128, "cache_tokens": 0, "prompt_tokens": 943, "prompt_ms": 5710.471, "decode_tokens_per_second": 15.905917126414467, "accepted": 92, "drafted": 105},
+    {"prompt": "cpp", "seed": 102, "output_tokens": 128, "cache_tokens": 0, "prompt_tokens": 86, "prompt_ms": 913.089, "decode_tokens_per_second": 14.15037683456293, "accepted": 87, "drafted": 120}
+  ],
+  "limitations": [
+    "Two seeds per short task; no full-window quality evaluation.",
+    "Memory is a whole-device snapshot, not a peak or OOM guarantee.",
+    "Attention allocation checks are not numerical accuracy tests."
+  ]
+}

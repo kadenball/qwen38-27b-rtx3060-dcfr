@@ -28,8 +28,11 @@ that occupied context was **11.09 tok/s**.
 
 The important change is prompt reuse, not a new peak decode record. This
 profile uses **MTP-3 with ordinary recurrent-state backups**, not D-CFR.
-Cold requests still require prefill. These measurements use additional local
-runtime optimizations not bundled in this repository's historical build.
+Cold requests still require prefill. The additional runtime optimizations are
+now included in a separate, source-pinned Q4 build; the historical IQ3 build
+remains unchanged.
+
+**[Run it: hardware requirements, model download, build, launch and verification](docs/q4-quickstart.md).**
 
 See the [configuration, measurements, and limitations](docs/q4-32k-interactive.md)
 and [machine-readable results](benchmarks/q4-32k-interactive-20260918.json).

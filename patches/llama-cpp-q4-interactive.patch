@@ -1,0 +1,370 @@
+--- a/src/llama-memory-recurrent.cpp
++++ b/src/llama-memory-recurrent.cpp
+@@ -42,7 +42,10 @@
+     compact_gdn_rollback = n_rs_seq > 0 && model.arch == LLM_ARCH_QWEN35 &&
+                            compact_env != nullptr && std::atoi(compact_env) != 0;
+     const char * transactional_env = std::getenv("LLAMA_GDN_TRANSACTIONAL_REPLAY");
+-    transactional_gdn_replay = n_rs_seq > 0 && model.arch == LLM_ARCH_QWEN35 &&
++    // Shallow interactive routes favor exact cross-request prompt checkpoints.
++    // Keep D-CFR for deeper throughput-oriented routes where its memory saving
++    // is required for the larger speculative horizon.
++    transactional_gdn_replay = n_rs_seq > 4 && model.arch == LLM_ARCH_QWEN35 &&
+                                transactional_env != nullptr && std::atoi(transactional_env) != 0;
+     const char * tree_env = std::getenv("LLAMA_PACKED_GDN_TREE");
+     packed_gdn_tree = transactional_gdn_replay && tree_env != nullptr && std::atoi(tree_env) != 0;
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -1651,11 +1651,13 @@
+         if (ret) {
+             const char * compact_gdn_env = std::getenv("LLAMA_COMPACT_GDN_ROLLBACK");
+             const char * transactional_gdn_env = std::getenv("LLAMA_GDN_TRANSACTIONAL_REPLAY");
+-            if ((compact_gdn_env != nullptr && std::atoi(compact_gdn_env) != 0) ||
+-                    (transactional_gdn_env != nullptr && std::atoi(transactional_gdn_env) != 0)) {
+-                // The compact factor buffer is not checkpointed yet.  Clear an
+-                // idle slot before prompt-cache selection so no restored prompt
+-                // can be paired with factors from the preceding request.
++            const bool transactional_gdn =
++                    transactional_gdn_env != nullptr && std::atoi(transactional_gdn_env) != 0 &&
++                    common_speculative_n_max(&params_base.speculative) > 4;
++            if ((compact_gdn_env != nullptr && std::atoi(compact_gdn_env) != 0) || transactional_gdn) {
++                // Compact factors are not checkpointed. Shallow interactive
++                // routes use ordinary rollback and retain their slot; deeper
++                // D-CFR throughput routes continue to clear between requests.
+                 if (ret->prompt.n_tokens() > 0) {
+                     ret->prompt_clear();
+                 }
+@@ -3318,16 +3320,16 @@
+ 
+                         slot.state = SLOT_STATE_PROCESSING_PROMPT;
+ 
+-                        // Compact GDN rollback factors are not part of the
+-                        // server's prompt checkpoints yet.  Reusing a retained
+-                        // recurrent slot would pair a restored S state with
+-                        // stale factors, so keep the experimental mode correct
+-                        // by starting each independent request from an empty
+-                        // slot.  In-request speculative rollback is unchanged.
++                        // Compact factors are not part of prompt checkpoints.
++                        // Shallow interactive routes use ordinary rollback;
++                        // deeper D-CFR throughput routes must start each
++                        // independent request from an empty slot.
+                         const char * compact_gdn_env = std::getenv("LLAMA_COMPACT_GDN_ROLLBACK");
+                         const char * transactional_gdn_env = std::getenv("LLAMA_GDN_TRANSACTIONAL_REPLAY");
+-                        if (((compact_gdn_env != nullptr && std::atoi(compact_gdn_env) != 0) ||
+-                                (transactional_gdn_env != nullptr && std::atoi(transactional_gdn_env) != 0)) &&
++                        const bool transactional_gdn =
++                                transactional_gdn_env != nullptr && std::atoi(transactional_gdn_env) != 0 &&
++                                common_speculative_n_max(&params_base.speculative) > 4;
++                        if (((compact_gdn_env != nullptr && std::atoi(compact_gdn_env) != 0) || transactional_gdn) &&
+                                 slot.prompt.n_tokens() > 0) {
+                             slot.prompt_clear();
+                         }
+--- a/ggml/src/ggml-cuda/fattn.cu
++++ b/ggml/src/ggml-cuda/fattn.cu
+@@ -4,6 +4,7 @@
+ #include "fattn-tile.cuh"
+ #include "fattn-vec.cuh"
+ #include "fattn.cuh"
++#include <cstdlib>
+ 
+ template <int DKQ, int DV, int ncols2>
+ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+@@ -333,8 +334,68 @@
+     BEST_FATTN_KERNEL_TILE    = 200,
+     BEST_FATTN_KERNEL_VEC     = 100,
+     BEST_FATTN_KERNEL_MMA_F16 = 400,
++    BEST_FATTN_KERNEL_MMA_HEADS = 401,
+ };
+ 
++static bool ggml_cuda_fattn_split_heads_supported(const int device, const ggml_tensor * dst) {
++    static const bool enabled = [] {
++        const char * value = std::getenv("GGML_CUDA_Q4_FA_HEADSPLIT");
++        return value != nullptr && std::atoi(value) == 1;
++    }();
++    if (!enabled || ggml_cuda_info().devices[device].cc != 860) {
++        return false;
++    }
++    const ggml_tensor * Q = dst->src[0];
++    const ggml_tensor * K = dst->src[1];
++    const ggml_tensor * V = dst->src[2];
++    const ggml_tensor * mask = dst->src[3];
++    float max_bias, softcap;
++    memcpy(&max_bias, (const float *) dst->op_params + 1, sizeof(float));
++    memcpy(&softcap, (const float *) dst->op_params + 2, sizeof(float));
++    return Q->type == GGML_TYPE_F32 && K->type == GGML_TYPE_Q4_0 && V->type == GGML_TYPE_Q4_0 &&
++        Q->ne[0] == 256 && K->ne[0] == 256 && V->ne[0] == 256 &&
++        Q->ne[1] >= 2 && Q->ne[1] <= 128 && K->ne[1] > 0 && K->ne[1] == V->ne[1] &&
++        K->ne[1] % FATTN_KQ_STRIDE == 0 && Q->ne[2] == 24 && K->ne[2] == 4 && V->ne[2] == 4 &&
++        Q->ne[3] == 1 && K->ne[3] == 1 && V->ne[3] == 1 &&
++        mask && mask->type == GGML_TYPE_F16 && mask->ne[2] == 1 && mask->ne[3] == 1 &&
++        dst->src[4] == nullptr && max_bias == 0.0f && softcap == 0.0f &&
++        dst->type == GGML_TYPE_F32 && dst->ne[0] == 256 && dst->ne[1] == 24 &&
++        dst->ne[2] == Q->ne[1] && dst->ne[3] == 1 && ggml_is_contiguous(dst);
++}
++
++static void ggml_cuda_fattn_split_head_view(const ggml_tensor * dst, const int head,
++        ggml_tensor & Q, ggml_tensor & K, ggml_tensor & V, ggml_tensor & part) {
++    Q = *dst->src[0];
++    K = *dst->src[1];
++    V = *dst->src[2];
++    part = *dst;
++    Q.ne[2] = 6;
++    K.ne[2] = V.ne[2] = 1;
++    Q.data = (void *) ((uintptr_t) Q.data + head*6*Q.nb[2]);
++    K.data = (void *) ((uintptr_t) K.data + head*K.nb[2]);
++    V.data = (void *) ((uintptr_t) V.data + head*V.nb[2]);
++    Q.view_src = K.view_src = V.view_src = part.view_src = nullptr;
++    Q.view_offs = K.view_offs = V.view_offs = part.view_offs = 0;
++    part.ne[1] = 6;
++    part.nb[2] = part.ne[1]*part.nb[1];
++    part.nb[3] = part.ne[2]*part.nb[2];
++    // One head group's output and FP16 K/V workspace follow the full output.
++    part.data = (void *) GGML_PAD((uintptr_t) dst->data + ggml_nbytes(dst), 128);
++    part.src[0] = &Q;
++    part.src[1] = &K;
++    part.src[2] = &V;
++}
++
++static void ggml_cuda_flash_attn_ext_split_heads(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
++    for (int head = 0; head < 4; ++head) {
++        ggml_tensor Q, K, V, part;
++        ggml_cuda_fattn_split_head_view(dst, head, Q, K, V, part);
++        ggml_cuda_flash_attn_ext_mma_f16(ctx, &part);
++        CUDA_CHECK(cudaMemcpy2DAsync((char *) dst->data + head*part.nb[2], dst->nb[2],
++            part.data, part.nb[2], part.nb[2], part.ne[2], cudaMemcpyDeviceToDevice, ctx.stream()));
++    }
++}
++
+ static bool ggml_cuda_fattn_kv_type_supported(ggml_type type) {
+     switch (type) {
+         case GGML_TYPE_F32:
+@@ -453,10 +514,25 @@
+         return BEST_FATTN_KERNEL_NONE;
+     }
+ 
++    if (ggml_cuda_fattn_split_heads_supported(device, dst)) {
++        return BEST_FATTN_KERNEL_MMA_HEADS;
++    }
++
+     // For small batch sizes the vector kernel may be preferable over the kernels optimized for large batch sizes:
+     // 192 satisfies % 64 == 0 but has no vec instance (DKQ != DV); force it onto the MMA path.
+     const bool can_use_vector_kernel = Q->ne[0] <= 256 && Q->ne[0] % 64 == 0 && Q->ne[0] != 192 && K->ne[1] % FATTN_KQ_STRIDE == 0;
+ 
++    static const bool q4_vec_small_batch = [] {
++        const char * value = std::getenv("GGML_CUDA_Q4_FA_VEC");
++        return value != nullptr && std::atoi(value) == 1;
++    }();
++    // Avoid FP16 KV copies for Q4 decode and prefill batches on sm_86.
++    if (q4_vec_small_batch && cc == 860 && can_use_vector_kernel &&
++            Q->ne[0] == 256 && Q->ne[1] <= 128 && Q->ne[3] == 1 &&
++            K->type == GGML_TYPE_Q4_0 && V->type == GGML_TYPE_Q4_0) {
++        return BEST_FATTN_KERNEL_VEC;
++    }
++
+     // If Turing tensor cores are available, use them:
+     if (turing_mma_available(cc) && Q->ne[0] != 40 && Q->ne[0] != 72) {
+         if (can_use_vector_kernel) {
+@@ -548,6 +624,12 @@
+     bool need_f16_V = false;
+ 
+     switch (kernel) {
++        case BEST_FATTN_KERNEL_MMA_HEADS: {
++            ggml_tensor Q, K, V, part;
++            ggml_cuda_fattn_split_head_view(dst, 0, Q, K, V, part);
++            const auto extra = ggml_cuda_flash_attn_ext_get_f16_extra_data(&part, true, true);
++            return extra.end - (uintptr_t) dst->data;
++        }
+         case BEST_FATTN_KERNEL_TILE:
+         case BEST_FATTN_KERNEL_MMA_F16:
+             need_f16_K = true;
+@@ -570,6 +652,9 @@
+ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+     ggml_cuda_set_device(ctx.device);
+     switch (ggml_cuda_get_best_fattn_kernel(ggml_cuda_get_device(), dst)) {
++        case BEST_FATTN_KERNEL_MMA_HEADS:
++            ggml_cuda_flash_attn_ext_split_heads(ctx, dst);
++            break;
+         case BEST_FATTN_KERNEL_NONE:
+             GGML_ABORT("fatal error");
+         case BEST_FATTN_KERNEL_TILE:
+--- a/ggml/src/ggml-cpu/ggml-cpu.c
++++ b/ggml/src/ggml-cpu/ggml-cpu.c
+@@ -15,6 +15,8 @@
+ #include "ggml.h"
+ #include "common.h"
+ 
++void ggml_vec_dot_iq4_xs_q8_K_multi(int n, float * s, size_t bs, const void * vx, const void * vy, size_t by, int nq);
++
+ #if defined(_MSC_VER) || defined(__MINGW32__)
+ #include <malloc.h> // using malloc.h with MSC/MINGW
+ #elif !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
+@@ -1271,7 +1273,13 @@
+ 
+     enum ggml_type           const vec_dot_type         = type_traits_cpu[src0->type].vec_dot_type;
+     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
+-    int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
++    int64_t                        vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
++#if defined(__AVX2__)
++    const char * iq4xs_dot2 = getenv("GGML_CPU_IQ4XS_DOT2");
++    if (!params->use_ref && src0->type == GGML_TYPE_IQ4_XS && iq4xs_dot2 && strcmp(iq4xs_dot2, "1") == 0) {
++        vec_dot_num_rows = 2;
++    }
++#endif
+ 
+     GGML_ASSERT(ne0 == ne01);
+     GGML_ASSERT(ne1 == ne11);
+@@ -1363,6 +1371,31 @@
+ 
+     ggml_barrier(params->threadpool);
+ 
++#if defined(__AVX2__)
++    const char * multi = getenv("GGML_CPU_IQ4XS_MULTI");
++    if (!params->use_ref && multi && multi[0] >= '2' && multi[0] <= '6' && multi[1] == '\0' &&
++            src0->type == GGML_TYPE_IQ4_XS && src1->type == GGML_TYPE_F32 &&
++            ne11 >= 3 && ne11 <= 8 && ne02 == 1 && ne03 == 1 && ne12 == 1 && ne13 == 1 &&
++            ggml_is_contiguous(src0)) {
++        const int width = multi[0] - '0';
++        const size_t row_size = ggml_row_size(GGML_TYPE_Q8_K, ne10);
++        const int64_t chunks = (ne01 + 15) / 16;
++        int chunk = ith;
++        while (chunk < chunks) {
++            for (int64_t row = chunk * 16; row < MIN((int64_t) (chunk + 1) * 16, ne01); ++row) {
++                for (int64_t q = 0; q < ne11; q += width) {
++                    float * output = (float *) ((char *) dst->data + q * nb1) + row;
++                    ggml_vec_dot_iq4_xs_q8_K_multi(ne00, output, nb1 / sizeof(float),
++                        (const char *) src0->data + row * nb01,
++                        (const char *) params->wdata + q * row_size, row_size, MIN(width, ne11 - q));
++                }
++            }
++            chunk = atomic_fetch_add_explicit(&params->threadpool->current_chunk, 1, memory_order_relaxed);
++        }
++        return;
++    }
++#endif
++
+ #if GGML_USE_LLAMAFILE
+     if (src1->type != vec_dot_type) {
+         const void* wdata = (src1->type == vec_dot_type) ? src1->data : params->wdata;
+--- a/ggml/src/ggml-cpu/arch/x86/quants.c
++++ b/ggml/src/ggml-cpu/arch/x86/quants.c
+@@ -4001,7 +4001,121 @@
+     *s = sumf;
+ }
+ 
++void ggml_vec_dot_iq4_xs_q8_K_multi(int n, float * s, size_t bs, const void * vx, const void * vy, size_t by, int nq);
++
++#if defined(__AVX2__)
++#define IQ4XS_MULTI(NQ) \
++static void iq4_xs_multi_##NQ(int n, float * s, size_t bs, const block_iq4_xs * x, const char * vy, size_t by) { \
++    const __m128i values = _mm_loadu_si128((const __m128i *) kvalues_iq4nl); \
++    const __m128i mask = _mm_set1_epi8(0x0f); \
++    const block_q8_K * y[NQ]; \
++    __m256 accum[NQ]; \
++    for (int j = 0; j < NQ; ++j) { y[j] = (const block_q8_K *) (vy + j * by); accum[j] = _mm256_setzero_ps(); } \
++    for (int block = 0; block < n / QK_K; ++block) { \
++        __m256i sum[NQ]; \
++        for (int j = 0; j < NQ; ++j) sum[j] = _mm256_setzero_si256(); \
++        uint16_t sh = x[block].scales_h; \
++        for (int ib = 0; ib < QK_K / 32; ib += 2) { \
++            const __m128i bits1 = _mm_loadu_si128((const __m128i *) (x[block].qs + ib * 16)); \
++            const __m128i bits2 = _mm_loadu_si128((const __m128i *) (x[block].qs + (ib + 1) * 16)); \
++            const __m256i q1 = MM256_SET_M128I( \
++                _mm_shuffle_epi8(values, _mm_and_si128(_mm_srli_epi16(bits1, 4), mask)), \
++                _mm_shuffle_epi8(values, _mm_and_si128(bits1, mask))); \
++            const __m256i q2 = MM256_SET_M128I( \
++                _mm_shuffle_epi8(values, _mm_and_si128(_mm_srli_epi16(bits2, 4), mask)), \
++                _mm_shuffle_epi8(values, _mm_and_si128(bits2, mask))); \
++            const int16_t ls1 = ((x[block].scales_l[ib / 2] & 0xf) | ((sh << 4) & 0x30)) - 32; \
++            const int16_t ls2 = ((x[block].scales_l[ib / 2] >> 4) | ((sh << 2) & 0x30)) - 32; \
++            sh >>= 4; \
++            for (int j = 0; j < NQ; ++j) { \
++                const __m256i v1 = _mm256_loadu_si256((const __m256i *) (y[j][block].qs + ib * 32)); \
++                const __m256i v2 = _mm256_loadu_si256((const __m256i *) (y[j][block].qs + (ib + 1) * 32)); \
++                sum[j] = _mm256_add_epi32(sum[j], _mm256_madd_epi16(mul_add_epi8(q1, v1), _mm256_set1_epi16(ls1))); \
++                sum[j] = _mm256_add_epi32(sum[j], _mm256_madd_epi16(mul_add_epi8(q2, v2), _mm256_set1_epi16(ls2))); \
++            } \
++        } \
++        const float d = GGML_CPU_FP16_TO_FP32(x[block].d); \
++        for (int j = 0; j < NQ; ++j) \
++            accum[j] = _mm256_fmadd_ps(_mm256_set1_ps(d * y[j][block].d), _mm256_cvtepi32_ps(sum[j]), accum[j]); \
++    } \
++    for (int j = 0; j < NQ; ++j) s[j * bs] = hsum_float_8(accum[j]); \
++}
++
++IQ4XS_MULTI(1)
++IQ4XS_MULTI(2)
++IQ4XS_MULTI(3)
++IQ4XS_MULTI(4)
++IQ4XS_MULTI(5)
++IQ4XS_MULTI(6)
++#undef IQ4XS_MULTI
++#endif
++
++void ggml_vec_dot_iq4_xs_q8_K_multi(int n, float * s, size_t bs, const void * vx, const void * vy, size_t by, int nq) {
++    GGML_ASSERT(n % QK_K == 0 && nq >= 1 && nq <= 6);
++#if defined(__AVX2__)
++    switch (nq) {
++#define IQ4XS_CASE(NQ) case NQ: iq4_xs_multi_##NQ(n, s, bs, vx, vy, by); return;
++        IQ4XS_CASE(1) IQ4XS_CASE(2) IQ4XS_CASE(3) IQ4XS_CASE(4) IQ4XS_CASE(5) IQ4XS_CASE(6)
++#undef IQ4XS_CASE
++    }
++#endif
++    for (int q = 0; q < nq; ++q)
++        ggml_vec_dot_iq4_xs_q8_K(n, s + q * bs, 0, vx, 0, (const char *) vy + q * by, 0, 1);
++}
++
++#if defined(__AVX2__)
++static void iq4_xs_dot_two_queries(int n, const block_iq4_xs * x, const block_q8_K * y0,
++                                  const block_q8_K * y1, float * s0, float * s1) {
++    const __m128i values = _mm_loadu_si128((const __m128i *) kvalues_iq4nl);
++    const __m128i mask = _mm_set1_epi8(0x0f);
++    const block_q8_K * y[2] = {y0, y1};
++    __m256 accum[2] = {_mm256_setzero_ps(), _mm256_setzero_ps()};
++    for (int block = 0; block < n / QK_K; ++block) {
++        __m256i sum1[2] = {_mm256_setzero_si256(), _mm256_setzero_si256()};
++        __m256i sum2[2] = {_mm256_setzero_si256(), _mm256_setzero_si256()};
++        uint16_t sh = x[block].scales_h;
++        for (int ib = 0; ib < QK_K / 32; ib += 2) {
++            const __m128i bits1 = _mm_loadu_si128((const __m128i *) (x[block].qs + ib * 16));
++            const __m128i bits2 = _mm_loadu_si128((const __m128i *) (x[block].qs + (ib + 1) * 16));
++            const __m256i q1 = MM256_SET_M128I(
++                _mm_shuffle_epi8(values, _mm_and_si128(_mm_srli_epi16(bits1, 4), mask)),
++                _mm_shuffle_epi8(values, _mm_and_si128(bits1, mask)));
++            const __m256i q2 = MM256_SET_M128I(
++                _mm_shuffle_epi8(values, _mm_and_si128(_mm_srli_epi16(bits2, 4), mask)),
++                _mm_shuffle_epi8(values, _mm_and_si128(bits2, mask)));
++            const int16_t ls1 = ((x[block].scales_l[ib / 2] & 0xf) | ((sh << 4) & 0x30)) - 32;
++            const int16_t ls2 = ((x[block].scales_l[ib / 2] >> 4) | ((sh << 2) & 0x30)) - 32;
++            sh >>= 4;
++            for (int j = 0; j < 2; ++j) {
++                const __m256i v1 = _mm256_loadu_si256((const __m256i *) (y[j][block].qs + ib * 32));
++                const __m256i v2 = _mm256_loadu_si256((const __m256i *) (y[j][block].qs + (ib + 1) * 32));
++                sum1[j] = _mm256_add_epi32(sum1[j], _mm256_madd_epi16(mul_add_epi8(q1, v1), _mm256_set1_epi16(ls1)));
++                sum2[j] = _mm256_add_epi32(sum2[j], _mm256_madd_epi16(mul_add_epi8(q2, v2), _mm256_set1_epi16(ls2)));
++            }
++        }
++        const float d = GGML_CPU_FP16_TO_FP32(x[block].d);
++        for (int j = 0; j < 2; ++j) {
++            accum[j] = _mm256_fmadd_ps(_mm256_set1_ps(d * y[j][block].d),
++                _mm256_cvtepi32_ps(_mm256_add_epi32(sum1[j], sum2[j])), accum[j]);
++        }
++    }
++    *s0 = hsum_float_8(accum[0]);
++    *s1 = hsum_float_8(accum[1]);
++}
++#endif
++
+ void ggml_vec_dot_iq4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
++#if defined(__AVX2__)
++    if (nrc == 2) {
++        const block_q8_K * y0 = (const block_q8_K *) vy;
++        const block_q8_K * y1 = (const block_q8_K *) ((const char *) vy + by);
++        for (int r = 0; r < 2; ++r) {
++            const block_iq4_xs * x = (const block_iq4_xs *) ((const char *) vx + r * bx);
++            iq4_xs_dot_two_queries(n, x, y0, y1, &s[r], &s[bs + r]);
++        }
++        return;
++    }
++#endif
+     assert(nrc == 1);
+     UNUSED(nrc);
+     UNUSED(bx);
