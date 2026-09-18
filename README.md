@@ -18,7 +18,23 @@ from **82.13 to 320.24 prompt tokens/s** on the same RTX 3060 by increasing the
 batch and microbatch from 16/16 to a VRAM-safe 128/128. This is a separate
 prefill result; it does not change the original generation-throughput claim.
 
-## Results
+## September 18 update: Q4 at 32K for interactive chat
+
+A separate **IQ4_XS, 32,768-context** profile on the same RTX 3060 12 GB
+measured **16.06 tok/s on a short Rust task** and **14.30 tok/s on a short
+C++ task**. A synthetic long-chat follow-up reused **25,950 input tokens**,
+processed only 25 new tokens, and completed in **12.1 seconds**; decode at
+that occupied context was **11.09 tok/s**.
+
+The important change is prompt reuse, not a new peak decode record. This
+profile uses **MTP-3 with ordinary recurrent-state backups**, not D-CFR.
+Cold requests still require prefill. These measurements use additional local
+runtime optimizations not bundled in this repository's historical build.
+
+See the [configuration, measurements, and limitations](docs/q4-32k-interactive.md)
+and [machine-readable results](benchmarks/q4-32k-interactive-20260918.json).
+
+## Original IQ3 results
 
 | Workload | Output | Accepted / drafted | Generated tokens/s |
 | --- | ---: | ---: | ---: |
