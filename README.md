@@ -18,6 +18,17 @@ from **82.13 to 320.24 prompt tokens/s** on the same RTX 3060 by increasing the
 batch and microbatch from 16/16 to a VRAM-safe 128/128. This is a separate
 prefill result; it does not change the original generation-throughput claim.
 
+## September 20 update: experimental Q3 at 96K and 128K
+
+Selective FFN offload and queued weight transfers reached **21.3–22.0 tok/s
+on short coding tasks at 96K**, and **19.7–20.9 tok/s at 128K** on the RTX 3060
+12 GB. After processing 89K/119K input tokens, generation measured 17.6/15.5
+tok/s respectively. These are single-run configuration screens, not new
+universal speed claims. The private prefetch runtime is not yet packaged by
+the public build scripts.
+
+See [results, settings, limitations and reproduction status](docs/iq3-large-context.md).
+
 ## September 18 update: Q4 at 32K for interactive chat
 
 A separate **IQ4_XS, 32,768-context** profile on the same RTX 3060 12 GB
