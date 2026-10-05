@@ -1,0 +1,324 @@
+diff --git a/ggml/src/ggml-backend.cpp b/ggml/src/ggml-backend.cpp
+--- a/ggml/src/ggml-backend.cpp
++++ b/ggml/src/ggml-backend.cpp
+@@ -773,6 +773,14 @@
+ };
+ 
+ struct ggml_backend_sched {
++    ggml_backend_t prefetch_backend;
++    ggml_backend_buffer_t prefetch_buffer;
++    ggml_backend_event_t queue_ready[3];
++    bool prefetch_failed;
++    uint64_t prefetch_hits;
++    uint64_t prefetch_alias_hits;
++    uint64_t prefetch_alias_reject[8];
++    bool prefetch_reported;
+     bool is_reset; // true if the scheduler has been reset since the last graph split
+     bool is_alloc;
+ 
+@@ -1591,6 +1599,62 @@
+     return true;
+ }
+ 
++static bool prefetch_alias_safe(ggml_backend_sched_t sched, int split_id, const ggml_tensor * weight, uint64_t * reasons, bool allocation_bounds = false) {
++    const auto & graph = sched->splits[split_id].graph;
++    const auto reject = [&](int reason) { reasons[reason]++; return false; };
++    if (weight->view_src || !ggml_is_contiguous(weight)) return reject(0);
++    const auto root = [](const ggml_tensor * tensor) {
++        while (tensor && tensor->view_src) tensor = tensor->view_src;
++        return tensor;
++    };
++    // The original destination stays unfilled, so no later split may read it.
++    for (int s = split_id + 1; s < sched->n_splits; ++s) {
++        const auto & future = sched->splits[s].graph;
++        for (int n = 0; n < future.n_nodes; ++n) {
++            if (root(future.nodes[n]) == weight) return reject(7);
++            for (int i = 0; i < GGML_MAX_SRC; ++i) {
++                if (root(future.nodes[n]->src[i]) == weight) return reject(7);
++            }
++        }
++    }
++    bool used = false;
++    const uintptr_t start = (uintptr_t) weight->data;
++    const auto footprint = [&](const ggml_tensor * tensor) {
++        if (allocation_bounds && tensor->buffer) {
++            return ggml_backend_buft_get_alloc_size(ggml_backend_buffer_get_type(tensor->buffer), tensor);
++        }
++        return ggml_nbytes(tensor) + 4096;
++    };
++    const size_t bytes = footprint(weight);
++    const auto overlaps = [&](const ggml_tensor * tensor) {
++        if (!tensor || !tensor->data || tensor == weight) return false;
++        if (allocation_bounds) tensor = root(tensor);
++        const uintptr_t other = (uintptr_t) tensor->data;
++        return start <= other ? other - start < bytes : start - other < footprint(tensor);
++    };
++    for (int n = 0; n < graph.n_nodes; ++n) {
++        const ggml_tensor * node = graph.nodes[n];
++        if (root(node) == weight) return reject(2);
++        for (int i = 0; i < GGML_MAX_SRC; ++i) {
++            const ggml_tensor * src = node->src[i];
++            if (src && src != weight && root(src) == weight) return reject(4);
++            if (overlaps(src)) {
++                // A prior graph output owns its value, not the old weight bytes.
++                bool produced = false;
++                for (int p = 0; p < n; ++p) {
++                    if (graph.nodes[p] == root(src) && graph.nodes[p]->op != GGML_OP_NONE) produced = true;
++                }
++                if (!produced) return reject(3);
++            }
++            if (src == weight) {
++                if (node->op != GGML_OP_MUL_MAT || i != 0) return reject(5);
++                used = true;
++            }
++        }
++    }
++    return used ? true : reject(6);
++}
++
+ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t sched) {
+     GGML_ASSERT(sched);
+     struct ggml_backend_sched_split * splits = sched->splits;
+@@ -1600,11 +1664,44 @@
+     std::vector<ggml_bitset_t> used_ids;
+ 
+     int prev_backend_id = -1;
++    const char * prefetch_env = getenv("GGML_CUDA_WEIGHT_PREFETCH");
++    const bool prefetch = prefetch_env && strcmp(prefetch_env, "1") == 0 && sched->n_copies == 1 && !sched->callback_eval;
++    const size_t prefetch_capacity = 33 * 1024 * 1024;
++    const char * alias_env = getenv("GGML_CUDA_WEIGHT_PREFETCH_ALIAS");
++    const bool alias = alias_env && strcmp(alias_env, "1") == 0 && sched->n_backends == 2;
++    const char * bounds_env = getenv("GGML_CUDA_WEIGHT_PREFETCH_ALIAS_BOUNDS");
++    const bool allocation_bounds = bounds_env && strcmp(bounds_env, "1") == 0;
++    const char * queue_env = getenv("GGML_CUDA_WEIGHT_PREFETCH_QUEUE");
++    const bool queue = prefetch && alias && allocation_bounds && queue_env && strcmp(queue_env, "1") == 0;
++    struct queued_weight { ggml_tensor staged = {}; ggml_tensor * input = nullptr; int split = -1; } queued[3];
++    if (queue && sched->prefetch_backend) ggml_backend_synchronize(sched->prefetch_backend);
++    int next_buffer = 0;
++    ggml_tensor staged = {};
++    ggml_tensor * pending = nullptr;
++    int pending_split = -1;
++    if (prefetch_env && !sched->prefetch_reported) {
++        GGML_LOG_WARN("WEIGHT_PREFETCH enabled=%d copies=%d callback=%d splits=%d\n", prefetch, sched->n_copies, sched->callback_eval != nullptr, sched->n_splits);
++        for (int si = 0; si < sched->n_splits; ++si) {
++            auto & s = splits[si];
++            if (!s.n_inputs) continue;
++            auto * input = s.inputs[0];
++            auto * buffer = input->view_src ? input->view_src->buffer : input->buffer;
++            GGML_LOG_WARN("WEIGHT_PREFETCH split=%d backend=%s buffer=%s usage=%d bytes=%zu\n", si,
++                ggml_backend_dev_name(ggml_backend_get_device(sched->backends[s.backend_id])),
++                buffer ? ggml_backend_buft_name(ggml_backend_buffer_get_type(buffer)) : "none",
++                buffer ? int(ggml_backend_buffer_get_usage(buffer)) : -1, ggml_nbytes(input));
++            if (si > 15) break;
++        }
++        sched->prefetch_reported = true;
++    }
+ 
+     for (int split_id = 0; split_id < sched->n_splits; split_id++) {
+         struct ggml_backend_sched_split * split = &splits[split_id];
+         int split_backend_id = split->backend_id;
+         ggml_backend_t split_backend = sched->backends[split_backend_id];
++        ggml_tensor * aliased = nullptr;
++        ggml_tensor saved = {};
++        int active_slot = -1;
+ 
+         // ensure the previous split's async work has completed before we start
+         // this split, the allocator may have reused buffer regions across splits
+@@ -1638,7 +1735,44 @@
+                     ggml_backend_synchronize(split_backend);
+                 }
+ 
++                if (queue && !aliased) {
++                    for (int slot = 0; slot < 3; ++slot) {
++                        auto & item = queued[slot];
++                        if (item.input != input || item.split != split_id) continue;
++                        ggml_backend_synchronize(split_backend);
++                        ggml_backend_event_synchronize(sched->queue_ready[slot]);
++                        saved = *input_cpy;
++                        aliased = input_cpy;
++                        input_cpy->data = item.staged.data;
++                        input_cpy->buffer = item.staged.buffer;
++                        input_cpy->extra = item.staged.extra;
++                        active_slot = slot;
++                        item.input = nullptr;
++                        sched->prefetch_hits++;
++                        sched->prefetch_alias_hits++;
++                        break;
++                    }
++                    if (aliased == input_cpy) continue;
++                }
+                 // when offloading MoE weights, we can reduce the amount of data copied by copying only the experts that are used
++                if (pending == input && pending_split == split_id) {
++                    // The copy stream must not overwrite a live allocator region.
++                    ggml_backend_synchronize(split_backend);
++                    if (alias && prefetch_alias_safe(sched, split_id, input_cpy, sched->prefetch_alias_reject, allocation_bounds)) {
++                        ggml_backend_synchronize(sched->prefetch_backend);
++                        saved = *input_cpy;
++                        aliased = input_cpy;
++                        input_cpy->data = staged.data;
++                        input_cpy->buffer = staged.buffer;
++                        input_cpy->extra = staged.extra;
++                        sched->prefetch_alias_hits++;
++                    } else {
++                        ggml_backend_tensor_copy_async(sched->prefetch_backend, split_backend, &staged, input_cpy);
++                    }
++                    pending = nullptr;
++                    sched->prefetch_hits++;
++                    continue;
++                }
+                 ggml_tensor * node = split->graph.nodes[0];
+                 if (split->graph.n_nodes > 0 &&
+                     ggml_backend_buffer_get_usage(input->buffer) == GGML_BACKEND_BUFFER_USAGE_WEIGHTS &&
+@@ -1739,8 +1873,134 @@
+             }
+         }
+ 
++        if (queue && !sched->prefetch_failed &&
++                strncmp(ggml_backend_dev_name(ggml_backend_get_device(split_backend)), "CUDA", 4) == 0) {
++            // Drain previous readers; active_slot belongs to the graph not yet launched.
++            ggml_backend_synchronize(split_backend);
++            for (int next = split_id + 1; next < sched->n_splits; ++next) {
++                auto & future = splits[next];
++                if (future.backend_id != split_backend_id) continue;
++                bool already = false;
++                int count = 0, free_slot = -1;
++                for (int slot = 0; slot < 3; ++slot) {
++                    if (queued[slot].input) { count++; if (queued[slot].split == next) already = true; }
++                    else if (slot != active_slot) free_slot = slot;
++                }
++                if (count >= 2 || free_slot < 0) break;
++                if (already) continue;
++                for (int j = 0; j < future.n_inputs; ++j) {
++                    auto * weight = future.inputs[j];
++                    auto * buffer = weight->view_src ? weight->view_src->buffer : weight->buffer;
++                    if (!buffer || (weight->flags & GGML_TENSOR_FLAG_INPUT) || !ggml_is_contiguous(weight) ||
++                            ggml_backend_buffer_get_usage(buffer) != GGML_BACKEND_BUFFER_USAGE_WEIGHTS ||
++                            strcmp(ggml_backend_buft_name(ggml_backend_buffer_get_type(buffer)), "CUDA_Host") != 0 ||
++                            ggml_nbytes(weight) < 1024 * 1024 || ggml_nbytes(weight) > prefetch_capacity) continue;
++                    auto * destination = tensor_copy(weight, split_backend_id, sched->cur_copy);
++                    if (!prefetch_alias_safe(sched, next, destination, sched->prefetch_alias_reject, true)) continue;
++                    if (!sched->prefetch_backend) {
++                        auto * device = ggml_backend_get_device(split_backend);
++                        sched->prefetch_backend = ggml_backend_dev_init(device, nullptr);
++                        if (!sched->prefetch_backend) {
++                            sched->prefetch_failed = true;
++                            break;
++                        }
++                        sched->prefetch_buffer = ggml_backend_alloc_buffer(sched->prefetch_backend, 3 * prefetch_capacity);
++                        for (int slot = 0; slot < 3; ++slot) sched->queue_ready[slot] = ggml_backend_event_new(device);
++                        if (!sched->prefetch_buffer || !sched->queue_ready[0] || !sched->queue_ready[1] || !sched->queue_ready[2]) {
++                            sched->prefetch_failed = true;
++                            break;
++                        }
++                        GGML_LOG_WARN("WEIGHT_PREFETCH queue: 3 x 33 MiB, lookahead 2\n");
++                    }
++                    if (ggml_backend_get_device(sched->prefetch_backend) != ggml_backend_get_device(split_backend) ||
++                            ggml_backend_buft_get_alloc_size(ggml_backend_buffer_get_type(sched->prefetch_buffer), weight) > prefetch_capacity) continue;
++                    auto & item = queued[free_slot];
++                    item.staged = *weight;
++                    item.staged.view_src = nullptr;
++                    item.staged.view_offs = 0;
++                    item.staged.extra = nullptr;
++                    item.staged.buffer = sched->prefetch_buffer;
++                    item.staged.data = (char *) ggml_backend_buffer_get_base(sched->prefetch_buffer) + free_slot * prefetch_capacity;
++                    if (ggml_backend_buffer_init_tensor(item.staged.buffer, &item.staged) != GGML_STATUS_SUCCESS) {
++                        sched->prefetch_failed = true;
++                        break;
++                    }
++                    ggml_backend_tensor_set_async(sched->prefetch_backend, &item.staged, weight->data, 0, ggml_nbytes(weight));
++                    ggml_backend_event_record(sched->queue_ready[free_slot], sched->prefetch_backend);
++                    item.input = weight;
++                    item.split = next;
++                    break;
++                }
++                if (sched->prefetch_failed) break;
++            }
++        }
++
++        if (!queue && prefetch && !pending && !sched->prefetch_failed &&
++                strncmp(ggml_backend_dev_name(ggml_backend_get_device(split_backend)), "CUDA", 4) == 0) {
++            for (int next = split_id + 1; next < sched->n_splits && !pending; ++next) {
++                auto & future = splits[next];
++                if (future.backend_id != split_backend_id) {
++                    continue;
++                }
++                for (int j = 0; j < future.n_inputs; ++j) {
++                    ggml_tensor * weight = future.inputs[j];
++                    ggml_backend_buffer_t buffer = weight->view_src ? weight->view_src->buffer : weight->buffer;
++                    if (!buffer || (weight->flags & GGML_TENSOR_FLAG_INPUT) || !ggml_is_contiguous(weight) ||
++                            ggml_backend_buffer_get_usage(buffer) != GGML_BACKEND_BUFFER_USAGE_WEIGHTS ||
++                            strcmp(ggml_backend_buft_name(ggml_backend_buffer_get_type(buffer)), "CUDA_Host") != 0 ||
++                            ggml_nbytes(weight) < 1024 * 1024 || ggml_nbytes(weight) > prefetch_capacity) {
++                        continue;
++                    }
++                    if (!sched->prefetch_backend) {
++                        sched->prefetch_backend = ggml_backend_dev_init(ggml_backend_get_device(split_backend), nullptr);
++                        if (sched->prefetch_backend) {
++                            sched->prefetch_buffer = ggml_backend_alloc_buffer(sched->prefetch_backend, prefetch_capacity * (alias ? 2 : 1));
++                        }
++                        if (!sched->prefetch_buffer) {
++                            sched->prefetch_failed = true;
++                            break;
++                        }
++                        GGML_LOG_WARN("WEIGHT_PREFETCH staging buffers: %d x %zu MiB\n", alias ? 2 : 1, prefetch_capacity / (1024 * 1024));
++                    }
++                    if (ggml_backend_get_device(sched->prefetch_backend) != ggml_backend_get_device(split_backend) ||
++                            ggml_backend_buft_get_alloc_size(ggml_backend_buffer_get_type(sched->prefetch_buffer), weight) > prefetch_capacity) {
++                        continue;
++                    }
++                    staged = *weight;
++                    staged.view_src = nullptr;
++                    staged.view_offs = 0;
++                    staged.extra = nullptr;
++                    staged.buffer = sched->prefetch_buffer;
++                    staged.data = ggml_backend_buffer_get_base(sched->prefetch_buffer);
++                    if (alias) {
++                        // Drain previous readers before reusing either staging region.
++                        ggml_backend_synchronize(split_backend);
++                        staged.data = (char *) staged.data + next_buffer * prefetch_capacity;
++                        next_buffer = 1 - next_buffer;
++                    }
++                    if (ggml_backend_buffer_init_tensor(staged.buffer, &staged) != GGML_STATUS_SUCCESS) {
++                        sched->prefetch_failed = true;
++                        break;
++                    }
++                    // This stream also owns prior D2D copies, so staging reuse is ordered.
++                    ggml_backend_tensor_set_async(sched->prefetch_backend, &staged, weight->data, 0, ggml_nbytes(weight));
++                    pending = weight;
++                    pending_split = next;
++                    break;
++                }
++                if (sched->prefetch_failed) {
++                    break;
++                }
++            }
++        }
++
+         if (!sched->callback_eval) {
++            const auto saved_uid = split->graph.uid;
++            // Zero bypasses the CUDA UID shortcut and checks actual source pointers.
++            if (aliased) split->graph.uid = 0;
+             enum ggml_status ec = ggml_backend_graph_compute_async(split_backend, &split->graph);
++            split->graph.uid = saved_uid;
++            if (aliased) *aliased = saved;
+             if (ec != GGML_STATUS_SUCCESS) {
+                 return ec;
+             }
+@@ -1864,6 +2124,17 @@
+ void ggml_backend_sched_free(ggml_backend_sched_t sched) {
+     if (sched == NULL) {
+         return;
++    }
++    if (sched->prefetch_backend) ggml_backend_synchronize(sched->prefetch_backend);
++    for (int slot = 0; slot < 3; ++slot) ggml_backend_event_free(sched->queue_ready[slot]);
++    if (sched->prefetch_backend) {
++        ggml_backend_buffer_free(sched->prefetch_buffer);
++        ggml_backend_free(sched->prefetch_backend);
++        GGML_LOG_WARN("WEIGHT_PREFETCH consumed: %llu\n", (unsigned long long) sched->prefetch_hits);
++        GGML_LOG_WARN("WEIGHT_PREFETCH aliased: %llu\n", (unsigned long long) sched->prefetch_alias_hits);
++        for (int i = 0; i < 8; ++i) {
++            GGML_LOG_WARN("WEIGHT_PREFETCH alias reject[%d]: %llu\n", i, (unsigned long long) sched->prefetch_alias_reject[i]);
++        }
+     }
+     for (int b = 0; b < sched->n_backends; b++) {
+         for (int c = 0; c < sched->n_copies; c++) {

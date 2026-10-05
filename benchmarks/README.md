@@ -2,6 +2,12 @@
 
 The structured JSON files are the authoritative result summaries:
 
+- `q3-cache-safe-20261005.json` records the five-seed same-RCO-GGUF comparison,
+  individual timings/output hashes, acceptance, occupied-context and 96K screens.
+- `q3-fixtures.json` defines the October 5 requests and sampling settings.
+- `q3-release-verification-20261005.json` records standalone packaging/build
+  checks separately from the earlier production-runtime measurements.
+
 - `transactional-factor-replay-20260827.json` records the two-plane TFR A/B
   and depth sweep.
 - `deferred-commit-factor-replay-20260827.json` records the one-plane D-CFR

@@ -1,0 +1,37 @@
+name: Hardware / reproduction report
+description: Share a matched performance test, regression or memory limit.
+title: "[Hardware] GPU / quant / context"
+body:
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware and software
+      description: GPU/VRAM, CPU, RAM, OS, driver, CUDA and compiler versions.
+    validations:
+      required: true
+  - type: textarea
+    id: pins
+    attributes:
+      label: Exact versions and configuration
+      description: Git revision, GGUF/template hashes, launch command, allocated context, threads, placement, KV and MTP depth.
+    validations:
+      required: true
+  - type: textarea
+    id: workload
+    attributes:
+      label: Workload and measurement
+      description: Fixtures/seeds, occupied context, input/output tokens, sampler, thinking mode, cold/cached status and number of runs.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: Mean/range, prefill and decode tok/s, accepted/drafted tokens, TTFT, sampled peak VRAM and any OOMs. Include the baseline when available.
+    validations:
+      required: true
+  - type: textarea
+    id: correctness
+    attributes:
+      label: Correctness and limitations
+      description: CPU/state/cache/tool/cancellation test results, output differences and any confounders or regressions.

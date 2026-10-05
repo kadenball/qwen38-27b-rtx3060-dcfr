@@ -1,5 +1,10 @@
 # Q3 at 96K and 128K on RTX 3060 12 GB
 
+**Historical September 20 experiment.** The scheduler and later cache-safe work
+are now packaged in the [October 5 Q3 release](q3-quickstart.md), which uses a
+different, hash-pinned RCO checkpoint. The availability statement below records
+the status of this older experiment, not the current repository.
+
 September 20, 2026 experimental configuration screen. Hardware: RTX 3060
 12 GB, Core i5-12400, 16 GB system RAM. Model: RVN multilingual MTP
 IQ3_XXS Qwen3.8-27B, not the Unsloth checkpoint in the historical benchmark.

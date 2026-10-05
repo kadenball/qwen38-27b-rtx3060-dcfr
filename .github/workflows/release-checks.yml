@@ -1,0 +1,29 @@
+name: Release checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  package-and-cpu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Packaging and benchmark consistency
+        run: python3 tests/test-release.py
+      - name: Prepare exact source
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libssl-dev
+          PREPARE_ONLY=1 ./scripts/build-q3.sh
+      - name: Model-free CPU build
+        run: |
+          cmake -S third_party/llama.cpp-q3-candidate -B build/q3-candidate -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_NATIVE=ON \
+            -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_CURL=OFF
+          cmake --build build/q3-candidate --target llama-server --parallel 2
+          ./scripts/check-q3.sh

@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-05",
+  "status": "passed",
+  "sourceBase": "c060ca974c773c7c3d17fd1b66dc9d312bc292c0",
+  "scope": "Standalone source packaging; distinct from the earlier production-runtime benchmarks",
+  "checks": {
+    "cleanCudaBuild": "passed",
+    "candidateSourcePins": "passed",
+    "baselineSourcePins": "passed",
+    "cpuKernels": "passed",
+    "recurrentCheckpointCodec": "passed",
+    "partialPrefetchCleanup": "passed",
+    "actualModelCheckerCompilation": "passed",
+    "templateDownloadHash": "passed"
+  },
+  "build": {
+    "configuration": "Release, GGML_CUDA=ON, GGML_NATIVE=ON, SM86",
+    "compiler": "GCC 15.3.1",
+    "cuda": "13.3",
+    "target": "llama-server",
+    "reportedVersion": "0.2.0-dev (build 1, commit c060ca974c77-routeweaver-q3-candidate)",
+    "freshSourceAndBuildDirectory": true,
+    "reusedProductionBuildObjects": false
+  },
+  "sourceVerification": {
+    "modifiedFilesPerVariant": 27,
+    "candidateManifest": "patches/Q3_SOURCE_SHA256SUMS",
+    "baselineManifest": "patches/Q3_BASELINE_SOURCE_SHA256SUMS",
+    "baselineFullBuildCompleted": false
+  },
+  "modelFreeTests": {
+    "command": "bash scripts/check-q3.sh",
+    "exitCode": 0,
+    "cpuQueryWidths": [2, 3, 4, 5, 6],
+    "exactDotCasesPerWidth": 1536,
+    "exactInitializedMatrixGraphsPerWidth": 136,
+    "matrixGraphThreads": 6,
+    "checkpointCases": "Five exact snapshots; whole/shared cache; truncated input recovery; rollback bounds",
+    "cleanupCases": "Null backend with zero through three partially created events"
+  },
+  "standaloneLargeModelGpuRerun": false,
+  "limitations": [
+    "The full 27B GPU tests and throughput figures were run on the separately built production runtime",
+    "No model was stopped or reloaded for release packaging",
+    "Other GPUs and operating systems have not been validated for this release"
+  ]
+}

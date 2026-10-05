@@ -1,0 +1,177 @@
+diff --git a/src/llama-memory-recurrent.cpp b/src/llama-memory-recurrent.cpp
+--- a/src/llama-memory-recurrent.cpp
++++ b/src/llama-memory-recurrent.cpp
+@@ -45,7 +45,9 @@
+     // Shallow interactive routes favor exact cross-request prompt checkpoints.
+     // Keep D-CFR for deeper throughput-oriented routes where its memory saving
+     // is required for the larger speculative horizon.
+-    transactional_gdn_replay = n_rs_seq > 4 && model.arch == LLM_ARCH_QWEN35 &&
++    const char * checkpoint_env = std::getenv("LLAMA_GDN_COMPLETE_CHECKPOINTS");
++    const bool complete_checkpoints = checkpoint_env && std::atoi(checkpoint_env) == 1;
++    transactional_gdn_replay = n_rs_seq > (complete_checkpoints ? 0u : 4u) && model.arch == LLM_ARCH_QWEN35 &&
+                                transactional_env != nullptr && std::atoi(transactional_env) != 0;
+     const char * tree_env = std::getenv("LLAMA_PACKED_GDN_TREE");
+     packed_gdn_tree = transactional_gdn_replay && tree_env != nullptr && std::atoi(tree_env) != 0;
+@@ -306,6 +308,10 @@
+             // partial rollback via per-token snapshot index (bounded by n_rs_seq)
+             if (0 < p0 && p0 <= cell.pos && p1 > cell.pos) {
+                 const llama_pos rollback = cell.pos - (p0 - 1);
++                if (transactional_gdn_replay && !packed_gdn_tree &&
++                        (rs_last_n[seq_id] > gdn_factor_slots || rollback > (llama_pos) rs_last_n[seq_id])) {
++                    return false;
++                }
+                 // pending rollback is single-use
+                 const bool pending = rs_idx[seq_id] != 0;
+                 if (!pending && rollback >= 1 && rollback <= (llama_pos) n_rs_seq) {
+@@ -956,6 +962,43 @@
+ void llama_memory_recurrent::state_write(llama_io_write_i & io, llama_seq_id seq_id, llama_state_seq_flags flags) const {
+     GGML_UNUSED(flags);
+ 
++    if (transactional_gdn_replay && !packed_gdn_tree) {
++        // Save the committed base, pending factors, and convolution snapshots together.
++        std::vector<uint32_t> selected;
++        for (uint32_t i = 0; i < size; ++i) {
++            if ((seq_id == -1 && !cells[i].is_empty()) || cells[i].has_seq_id(seq_id)) selected.push_back(i);
++        }
++        const uint32_t header[] = {0x44434652, 1, n_rs_seq, gdn_factor_slots, gdn_factor_size, (uint32_t) selected.size()};
++        io.write(header, sizeof(header));
++        std::vector<std::pair<uint32_t, uint32_t>> ranges;
++        for (uint32_t i : selected) ranges.emplace_back(i, i + 1);
++        state_write_meta(io, ranges, seq_id);
++        for (uint32_t i : selected) {
++            const llama_seq_id first = seq_id == -1 ? *cells[i].seq_id.begin() : seq_id;
++            const uint32_t meta[] = {rs_idx.at(first), rs_last_n.at(first)};
++            for (llama_seq_id owner : cells[i].seq_id) {
++                if (seq_id == -1 && (rs_idx.at(owner) != meta[0] || rs_last_n.at(owner) != meta[1])) {
++                    throw std::runtime_error("shared D-CFR state has different pending replay metadata");
++                }
++            }
++            io.write(meta, sizeof(meta));
++        }
++        for (const auto * group : {&r_l, &s_l, &f_l}) {
++            for (auto * tensor : *group) {
++                if (!tensor) continue;
++                const uint64_t layout[] = {(uint64_t) tensor->type, tensor->nb[1], (uint64_t) tensor->ne[1] / size};
++                io.write(layout, sizeof(layout));
++                for (uint32_t i : selected) {
++                    const uint32_t source = cells[i].src >= 0 ? cells[i].src : i;
++                    for (uint64_t plane = 0; plane < layout[2]; ++plane) {
++                        io.write_tensor(tensor, (plane * size + source) * layout[1], layout[1]);
++                    }
++                }
++            }
++        }
++        return;
++    }
++
+     std::vector<std::pair<uint32_t, uint32_t>> cell_ranges; // ranges, from inclusive, to exclusive
+     std::vector<std::pair<uint32_t, uint32_t>> cell_ranges_data; // logical source row ranges
+     uint32_t cell_count = 0;
+@@ -1040,6 +1083,57 @@
+     uint32_t cell_count;
+     io.read(&cell_count, sizeof(cell_count));
+ 
++    if (cell_count == 0x44434652) {
++        uint32_t header[5];
++        io.read(header, sizeof(header));
++        if (!transactional_gdn_replay || packed_gdn_tree || header[0] != 1 ||
++                header[1] != n_rs_seq || header[2] != gdn_factor_slots || header[3] != gdn_factor_size || header[4] > size) {
++            throw std::runtime_error("incompatible D-CFR checkpoint");
++        }
++        cell_count = header[4];
++        try {
++            if (!state_read_meta(io, cell_count, seq_id)) throw std::runtime_error("invalid D-CFR cells");
++            std::vector<std::pair<uint32_t, uint32_t>> pending(cell_count);
++            for (auto & item : pending) {
++                uint32_t meta[2];
++                io.read(meta, sizeof(meta));
++                if (meta[0] > n_rs_seq || meta[0] > meta[1]) throw std::runtime_error("invalid D-CFR replay metadata");
++                item = {meta[0], meta[1]};
++            }
++            for (const auto * group : {&r_l, &s_l, &f_l}) {
++                for (auto * tensor : *group) {
++                    if (!tensor) continue;
++                    uint64_t layout[3];
++                    io.read(layout, sizeof(layout));
++                    if (layout[0] != (uint64_t) tensor->type || layout[1] != tensor->nb[1] ||
++                            layout[2] != (uint64_t) tensor->ne[1] / size) {
++                        throw std::runtime_error("incompatible D-CFR tensor layout");
++                    }
++                    for (uint32_t i = 0; i < cell_count; ++i) {
++                        for (uint64_t plane = 0; plane < layout[2]; ++plane) {
++                            io.read_tensor(tensor, (plane * size + head + i) * layout[1], layout[1]);
++                        }
++                    }
++                }
++            }
++            for (uint32_t i = 0; i < cell_count; ++i) {
++                for (llama_seq_id owner : cells[head + i].seq_id) {
++                    rs_idx.at(owner) = pending[i].first;
++                    rs_prev_n.at(owner) = 0;
++                    rs_last_n.at(owner) = pending[i].second;
++                }
++            }
++        } catch (...) {
++            if (seq_id == -1) clear(true);
++            else seq_rm(seq_id, -1, -1);
++            throw;
++        }
++        return;
++    }
++    if (transactional_gdn_replay && !packed_gdn_tree) {
++        throw std::runtime_error("D-CFR requires a complete replay checkpoint");
++    }
++
+     bool res = true;
+ 
+     res = res && state_read_meta(io, cell_count, seq_id);
+diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -1654,7 +1654,11 @@
+             const bool transactional_gdn =
+                     transactional_gdn_env != nullptr && std::atoi(transactional_gdn_env) != 0 &&
+                     common_speculative_n_max(&params_base.speculative) > 4;
+-            if ((compact_gdn_env != nullptr && std::atoi(compact_gdn_env) != 0) || transactional_gdn) {
++            const char * checkpoint_env = std::getenv("LLAMA_GDN_COMPLETE_CHECKPOINTS");
++            const char * tree_env = std::getenv("LLAMA_PACKED_GDN_TREE");
++            const bool complete_checkpoints = checkpoint_env && std::atoi(checkpoint_env) == 1 &&
++                    (!tree_env || std::atoi(tree_env) == 0);
++            if ((compact_gdn_env != nullptr && std::atoi(compact_gdn_env) != 0) || (transactional_gdn && !complete_checkpoints)) {
+                 // Compact factors are not checkpointed. Shallow interactive
+                 // routes use ordinary rollback and retain their slot; deeper
+                 // D-CFR throughput routes continue to clear between requests.
+@@ -3329,7 +3333,11 @@
+                         const bool transactional_gdn =
+                                 transactional_gdn_env != nullptr && std::atoi(transactional_gdn_env) != 0 &&
+                                 common_speculative_n_max(&params_base.speculative) > 4;
+-                        if (((compact_gdn_env != nullptr && std::atoi(compact_gdn_env) != 0) || transactional_gdn) &&
++                        const char * checkpoint_env = std::getenv("LLAMA_GDN_COMPLETE_CHECKPOINTS");
++                        const char * tree_env = std::getenv("LLAMA_PACKED_GDN_TREE");
++                        const bool complete_checkpoints = checkpoint_env && std::atoi(checkpoint_env) == 1 &&
++                                (!tree_env || std::atoi(tree_env) == 0);
++                        if (((compact_gdn_env != nullptr && std::atoi(compact_gdn_env) != 0) || (transactional_gdn && !complete_checkpoints)) &&
+                                 slot.prompt.n_tokens() > 0) {
+                             slot.prompt_clear();
+                         }
+diff --git a/ggml/src/ggml-backend.cpp b/ggml/src/ggml-backend.cpp
+--- a/ggml/src/ggml-backend.cpp
++++ b/ggml/src/ggml-backend.cpp
+@@ -1666,7 +1666,7 @@
+     int prev_backend_id = -1;
+     const char * prefetch_env = getenv("GGML_CUDA_WEIGHT_PREFETCH");
+     const bool prefetch = prefetch_env && strcmp(prefetch_env, "1") == 0 && sched->n_copies == 1 && !sched->callback_eval;
+-    const size_t prefetch_capacity = 33 * 1024 * 1024;
++    const size_t prefetch_capacity = 48 * 1024 * 1024;
+     const char * alias_env = getenv("GGML_CUDA_WEIGHT_PREFETCH_ALIAS");
+     const bool alias = alias_env && strcmp(alias_env, "1") == 0 && sched->n_backends == 2;
+     const char * bounds_env = getenv("GGML_CUDA_WEIGHT_PREFETCH_ALIAS_BOUNDS");
+@@ -1910,7 +1910,7 @@
+                             sched->prefetch_failed = true;
+                             break;
+                         }
+-                        GGML_LOG_WARN("WEIGHT_PREFETCH queue: 3 x 33 MiB, lookahead 2\n");
++                        GGML_LOG_WARN("WEIGHT_PREFETCH queue: 3 x 48 MiB, lookahead 2\n");
+                     }
+                     if (ggml_backend_get_device(sched->prefetch_backend) != ggml_backend_get_device(split_backend) ||
+                             ggml_backend_buft_get_alloc_size(ggml_backend_buffer_get_type(sched->prefetch_buffer), weight) > prefetch_capacity) continue;
