@@ -20,7 +20,32 @@ runtime; they do not replace another llama.cpp installation or change a harness.
 multiple harnesses and compilation. More RAM gives operating headroom, not a
 promised tokens/s increase. Stop other model servers before starting this one.
 
-## Download and build
+## Guided setup and automatic tuning
+
+After installing the prerequisites, the experimental guided route is:
+
+```bash
+git clone https://github.com/kadenball/qwen38-27b-rtx3060-dcfr.git
+cd qwen38-27b-rtx3060-dcfr
+./routeweaver setup --context 98304
+./routeweaver start --context 98304
+```
+
+Choose `--context 131072` for both commands to tune and launch the 128K profile.
+Setup selects from installed CUDA/host compilers using a compile-only probe,
+builds natively, and measures configurations rather than assuming six threads
+is optimal for every CPU. It never changes the selected quant/context to win a
+benchmark, never installs drivers or edits a harness, and refuses existing GPU
+compute processes. The initial automatic scope is Linux x86-64 AVX2/FMA,
+one 12 GB+ NVIDIA GPU, and the pinned text-only Q3 model.
+
+[Read-only planning, time budgets, reuse an existing model, safety limits,
+saved profiles and rollback](automatic-setup.md). This new tuner has offline
+and HTTP/process integration coverage plus a real 96K tuning session on the
+RTX 3060. Other hardware remains experimental. Use the manual path below for
+explicit control or unsupported setups.
+
+## Manual installation: download and build
 
 ```bash
 git clone https://github.com/kadenball/qwen38-27b-rtx3060-dcfr.git
@@ -100,7 +125,10 @@ CONTEXT=131072 ./scripts/serve-q3.sh --print-config
 ```
 
 Supported overrides: `MODEL_PATH`, `CHAT_TEMPLATE_PATH`, `PORT`, `THREADS`,
-`HOST_FFN_BLOCKS`, `MTP_DEPTH`, `MAX_OUTPUT_TOKENS`, `MMPROJ_PATH`.
+`HOST_FFN_BLOCKS`, `MTP_DEPTH`, `MAX_OUTPUT_TOKENS`, `MMPROJ_PATH`,
+`SPECULATION=mtp|none`, `BATCH_SIZE`, `UBATCH_SIZE`.
+Batch overrides must satisfy `32 <= UBATCH_SIZE <= BATCH_SIZE <= 512`.
+`SPECULATION=none` selects real plain decode; it does not merely lower MTP depth.
 The model/template hashes still have to match. More host blocks can reduce
 weight residency; fewer can improve speed if they fit. Nondefault placement,
 threads and depth are experiments, not validated hardware presets.

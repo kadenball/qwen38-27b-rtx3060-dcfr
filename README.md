@@ -47,6 +47,35 @@ can exhaust that margin.
 The current Q3 release targets the hash-pinned
 **RVN-Qwen3.8-27B-Heretic-GSQ-RCO-IQ3_XXS-mtp.gguf**, not every Qwen quant.
 
+### Guided setup and automatic tuning (experimental)
+
+For Linux x86-64 with AVX2/FMA and one NVIDIA GPU with at least 12 GB VRAM.
+Install the [build prerequisites](docs/q3-quickstart.md#requirements) first;
+the setup command detects a compatible installed CUDA/compiler pair.
+
+```bash
+git clone https://github.com/kadenball/qwen38-27b-rtx3060-dcfr.git
+cd qwen38-27b-rtx3060-dcfr
+./routeweaver setup --context 98304
+./routeweaver start --context 98304
+```
+
+Use `--context 131072` on both commands for 128K. Setup verifies/downloads the
+model, builds locally, tests a bounded set of settings, and saves a validated
+profile. It keeps your context, quant and Q4_0 KV fixed. Existing GPU compute
+processes must be stopped by their owner; setup never closes them automatically.
+
+The default tuning budget is 15 minutes, **excluding download/build and
+model-free checks**. A failed or inconclusive tune does not replace an existing
+profile. This is the best passing configuration sampled, not a guaranteed
+global optimum. A real 96K tuning session passed on the RTX 3060 development
+machine; other hardware remains experimental. See
+[validation scope and full instructions](docs/automatic-setup.md).
+
+### Manual installation
+
+Prefer explicit settings? This remains a fully independent installation path:
+
 ```bash
 git clone https://github.com/kadenball/qwen38-27b-rtx3060-dcfr.git
 cd qwen38-27b-rtx3060-dcfr
@@ -98,6 +127,7 @@ prefetch gains depend on how much work crosses the CPU/GPU boundary.
 ## Project map
 
 - [Q3 quickstart](docs/q3-quickstart.md): download, build, serve, vision and regression tests.
+- [Automatic setup](docs/automatic-setup.md): hardware detection, bounded tuning, profiles and rollback.
 - [Current results](docs/q3-cache-safe.md): repeat measurements and what they do not establish.
 - [Architecture](docs/architecture.md): checkpoints, memory placement and transfer scheduling.
 - [Q4 interactive guide](docs/q4-quickstart.md): the separate historical 32K IQ4_XS release.

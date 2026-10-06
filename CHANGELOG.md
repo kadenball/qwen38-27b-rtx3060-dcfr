@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-06 - Experimental guided setup and hardware tuner
+
+- Added the project-local `routeweaver` setup/doctor/tune/start/status/rollback CLI.
+- Detect installed hardware/toolchains, reuse verified downloads, and build locally.
+- Added bounded configuration screens, true plain-decode comparison, repeat
+  confirmation, memory/process guards and atomic fingerprinted profiles.
+- Added CPU-only policy and real HTTP/subprocess integration tests, plus a real
+  96K model-loaded tuning run on the RTX 3060; other hardware remains unvalidated.
+- Preserve GPU safety-stop reasons when a stopped trial closes an HTTP connection.
+- Put guided setup first, with the independent manual installation immediately below it.
+
 ## 2026-10-05 - RouteWeaver Q3 experimental release
 
 - Adopted the RouteWeaver project name and banner; repository URL/history unchanged.

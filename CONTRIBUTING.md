@@ -31,6 +31,7 @@ Run these before proposing a change:
 ```bash
 python3 scripts/update-checksums.py
 python3 tests/test-release.py
+python3 tests/test-autotune.py
 ./scripts/check-q3.sh
 ```
 

@@ -14,11 +14,16 @@ host_blocks="${HOST_FFN_BLOCKS:-$default_blocks}"
 threads="${THREADS:-6}"
 port="${PORT:-8080}"
 depth="${MTP_DEPTH:-4}"
+speculation="${SPECULATION:-mtp}"
+case "$speculation" in mtp|none) ;; *) echo 'SPECULATION must be mtp or none.' >&2; return 2 ;; esac
+batch="${BATCH_SIZE:-128}"
+ubatch="${UBATCH_SIZE:-128}"
 output="${MAX_OUTPUT_TOKENS:-$default_output}"
-for value in "$host_blocks" "$threads" "$port" "$depth" "$output"; do
+for value in "$host_blocks" "$threads" "$port" "$depth" "$output" "$batch" "$ubatch"; do
     [[ "$value" =~ ^(0|[1-9][0-9]*)$ && ${#value} -le 6 ]] || { echo 'Invalid integer setting.' >&2; return 2; }
 done
 ((host_blocks <= 64 && threads >= 1 && threads <= 256 && port >= 1 && port <= 65535 && depth >= 1 && depth <= 10 && output >= 1 && output < context)) || { echo 'Q3 setting outside supported bounds.' >&2; return 2; }
+((ubatch >= 32 && ubatch <= batch && batch <= 512)) || { echo 'Require 32 <= UBATCH_SIZE <= BATCH_SIZE <= 512.' >&2; return 2; }
 model="${MODEL_PATH:-$root/models/RVN-Qwen3.8-27B-Heretic-GSQ-RCO-IQ3_XXS-mtp.gguf}"
 template="${CHAT_TEMPLATE_PATH:-$root/models/qwen-fixed-v22.4.jinja}"
 build_dir="$root/build/q3-$variant"

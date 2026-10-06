@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-06",
+  "status": "passed_with_scope_limits",
+  "scope": "Experimental installer/tuner validation, including real-model 96K runs; not a speedup claim over manual presets",
+  "offlinePackagingTests": {"command": "python3 tests/test-release.py", "passed": 10},
+  "tunerTests": {"command": "python3 tests/test-autotune.py", "passed": 26},
+  "modelFreeRegressions": {"command": "bash scripts/check-q3.sh", "status": "passed"},
+  "readOnlyHardwareDetection": "passed on the development machine",
+  "existingGpuProcessRefusal": "passed without terminating existing processes",
+  "nativeBuildPreservationAndFailureRecovery": "covered by temporary-directory tests",
+  "realCompileOnlyToolchainProbe": "passed with GCC 15.3.1, CUDA 13.3 and SM86",
+  "httpAndSubprocessLifecycle": "covered by real CPU-only fake-server integration tests",
+  "modelLoadedTuningCompleted": true,
+  "realModel": {
+    "hardware": "RTX 3060 12 GB, Core i5-12400, 16 GB RAM, Linux",
+    "context": 98304,
+    "modelSha256": "475be499f4bc4f729a811e24ad11419bd187d345af18eff494b89c8ba55a0039",
+    "runtime": "Previously clean-built standalone public candidate",
+    "fullScreenTrials": 11,
+    "fullScreenStatus": "passed",
+    "finalCodeConfirmationTrials": 4,
+    "finalCodeConfirmationStatus": "passed",
+    "selectedConfig": {"host_blocks": 41, "threads": 6, "depth": 4, "speculation": "mtp", "batch": 128, "ubatch": 128},
+    "fullScreenFinalMinimumFreeVramMiB": 884,
+    "confirmationFinalMinimumFreeVramMiB": 920,
+    "chatCacheToolsCancellation": "passed in both tuning runs",
+    "savedProfileLaunchAndReply": "passed",
+    "ownedProcessCleanup": "passed",
+    "realSafetyRejection": "More GPU-resident placement rejected at 686 MiB free against 768 MiB margin",
+    "diagnosticRegression": "Fixed and tested propagation of the guard reason through a closed HTTP request"
+  },
+  "automaticCleanInstallEndToEnd": false,
+  "normalModelRestoredAfterTesting": true,
+  "harnessConfigurationsChanged": false,
+  "otherHardwareValidated": false,
+  "limitations": [
+    "Fake-server integration tests validate orchestration, not LLM output quality or GPU memory prediction",
+    "Real tuning reused the pinned model and existing standalone build; the entire guided fresh download/build flow was not rerun end to end",
+    "The normal model router was paused with user approval; harness services and their configurations were not changed",
+    "Earlier published throughput results are not automatic-tuner results",
+    "Memory sampling and short fixtures do not certify every peak or near-full-context workload"
+  ]
+}

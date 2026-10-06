@@ -14,7 +14,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Packaging and benchmark consistency
-        run: python3 tests/test-release.py
+        run: |
+          python3 tests/test-release.py
+          python3 tests/test-autotune.py
       - name: Prepare exact source
         run: |
           sudo apt-get update

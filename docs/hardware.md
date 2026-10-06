@@ -3,6 +3,11 @@
 Support labels refer to a particular runtime, model and configuration, not a
 GPU's ability to run upstream llama.cpp in general.
 
+The new [automatic setup/tuner](automatic-setup.md) can screen settings on a
+supported destination machine. Its real-model 96K flow passed on the RTX 3060,
+but it does not certify additional hardware. The manual
+installation is retained underneath the guided route in the quickstart.
+
 | Label | Hardware/configuration | Evidence |
 |---|---|---|
 | Locally tested | RTX 3060 12 GB, i5-12400, 16 GB RAM, Linux; RCO Q3 at 96K/128K | [October 5 measurements](q3-cache-safe.md) |

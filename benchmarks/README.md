@@ -23,3 +23,10 @@ The structured JSON files are the authoritative result summaries:
 `raw/dcfr-mtp4-fixed46-profile-v2-20260827.log` record the 512-token
 ordinary/D-CFR A/B. Timing and runtime output are retained verbatim, with the
 repository prefix normalized to `<repository>`.
+
+## Automatic tuner validation
+
+[October 6 installer/tuner checks](autotune-verification-20261006.json) cover
+packaging, safety policy, CPU-only HTTP/process integration and a real 96K
+RTX 3060 tuning session. These do not extend the hardware support list or
+claim a speedup over the previously hand-tuned presets.
