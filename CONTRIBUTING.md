@@ -26,7 +26,8 @@ quant, sampler, output length or template so readers can identify confounders.
 - Explain which measured variable changed. Separate an isolated mechanism
   result from a combined tuned-configuration result.
 
-Run these before proposing a change:
+Stage intended new release files before refreshing checksums; untracked files
+are not included in the manifest. Run these before proposing a change:
 
 ```bash
 python3 scripts/update-checksums.py
@@ -40,6 +41,8 @@ modified upstream files. When updating a patch, prepare a fresh source tree,
 verify its final source hashes, and retain the earlier benchmark artifacts.
 CI checks packaging and model-free CPU/state behavior; GPU performance and
 actual-model correctness still require real hardware reports.
+For Fast changes, also run `Q3_VARIANT=fast ./scripts/check-q3.sh` against the
+separate Fast build. That includes the probability-verifier regression test.
 
 RouteWeaver is independent of upstream llama.cpp. Changes proposed upstream
 must follow that project's contribution rules. Credit upstream work and

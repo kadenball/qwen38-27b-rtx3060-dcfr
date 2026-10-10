@@ -46,3 +46,12 @@ tool. Its exact prompt is retained in `docs/assets/banner-prompt.txt`.
 The runtime research and release preparation were developed with AI assistance;
 the included tests document the tested scope rather than guaranteeing correctness
 over every workload or device.
+
+The October 8 Q3 Fast work is exported as an additional opt-in overlay after
+the October 5 patches. Its probability-based MTP verifier is a compatibility
+port of llama.cpp [PR 27694](https://github.com/ggml-org/llama.cpp/pull/27694),
+commit `1fb7ef3e3327f18f1e99d294115b8493d54e196a`, with adaptations to this older
+server and checkpoint API. The rejection-sampling algorithm is upstream work.
+RouteWeaver adds its request-boundary/replay integration, experimental sparse
+CUDA KV allocation, evictable immutable-weight copies, shape-specific kernels
+and scratch-reservation policy. The source differences retain upstream notices.

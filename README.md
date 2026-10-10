@@ -9,11 +9,30 @@ on memory-constrained hardware. Built on llama.cpp: cache-safe speculative
 decoding, queued CPU-to-GPU weight transfers, selective weight placement, and
 focused CPU/CUDA kernels.
 
-[Run Q3](docs/q3-quickstart.md) · [Results](docs/q3-cache-safe.md) ·
+[Run Q3](docs/q3-quickstart.md) · [Q3 Fast experiment](docs/q3-fast.md) ·
 [Hardware](docs/hardware.md) · [How it works](docs/architecture.md) ·
 [Contribute](CONTRIBUTING.md)
 
-## Latest: Qwen 27B Q3, 128K context, one RTX 3060 12 GB
+## Latest: opt-in Q3 Fast, one RTX 3060 12 GB
+
+The October 8 experimental runtime combines probability-based MTP verification,
+grow-on-demand KV memory, evictable GPU weight copies and tuned SM86 kernels.
+Three-seed short-fixture means are **48.61 tok/s Rust, 41.31 C++ and 34.64
+reasoning**. A broader seven-task screen averages **37.03 tok/s** by timed
+generation tokens/time, excluding its easy counting anchor; that screen has only one seed.
+
+These are throughput screens, not coding-quality scores. The window is **128K
+capacity**, not 128K occupied: the new 30,425-input-token check reaches **35.57
+tok/s**, while a full 128K occupied run remains unvalidated. Speeds fall as
+context grows and weight copies give VRAM back to KV storage.
+
+[Build/run Fast, exact settings, ranges, acceptance and limitations](docs/q3-fast.md)
+· [Measured runs](benchmarks/q3-fast-20261008.json)
+
+Fast is a separate `Q3_VARIANT=fast` build. The default launcher and automatic
+tuner below remain on the October 5 candidate; existing profiles are unchanged.
+
+## Default release: Qwen 27B Q3, 128K context, one RTX 3060 12 GB
 
 The October 5 configuration improved generation throughput by **14.5–15.4%**
 over the previous same-GGUF setup across three short fixtures, five seeds each.
@@ -95,7 +114,7 @@ Stop other GPU model servers first. Read the
 [complete setup, vision, client connection and rollback guide](docs/q3-quickstart.md).
 The server binds to localhost and exposes an OpenAI-compatible API.
 
-## Where the gain comes from
+## Where the default release's gain comes from
 
 - **Cache-safe D-CFR:** preserve the recurrent base, pending updates and rollback
   metadata together, making compact speculative state compatible with prompt reuse.
@@ -113,6 +132,9 @@ This repository is an experimental fork/patch set, not an upstream llama.cpp rel
 
 ## Hardware support is evidence-based
 
+This table describes the October 5 default. The newer Fast snapshot has its own
+[narrower validation scope](docs/q3-fast.md#limits-and-correctness-scope).
+
 | Status | Scope |
 |---|---|
 | **Locally tested** | RTX 3060 12 GB + i5-12400, this Q3 model, 96K/128K |
@@ -129,6 +151,7 @@ prefetch gains depend on how much work crosses the CPU/GPU boundary.
 - [Q3 quickstart](docs/q3-quickstart.md): download, build, serve, vision and regression tests.
 - [Automatic setup](docs/automatic-setup.md): hardware detection, bounded tuning, profiles and rollback.
 - [Current results](docs/q3-cache-safe.md): repeat measurements and what they do not establish.
+- [Q3 Fast experiment](docs/q3-fast.md): optional new runtime, source export and October 8 results.
 - [Architecture](docs/architecture.md): checkpoints, memory placement and transfer scheduling.
 - [Q4 interactive guide](docs/q4-quickstart.md): the separate historical 32K IQ4_XS release.
 - [Earlier 96K/128K experiment](docs/iq3-large-context.md): different checkpoint and date.

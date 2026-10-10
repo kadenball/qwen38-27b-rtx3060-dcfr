@@ -4,6 +4,9 @@ The October 5 release packages the measured cache-safe D-CFR, queued transfers,
 IQ3_XXS CPU kernels and Q4_0 attention path. These instructions build a separate
 runtime; they do not replace another llama.cpp installation or change a harness.
 
+For the opt-in October 8 successor, use the separate [Q3 Fast guide](q3-fast.md).
+The commands below intentionally retain the October 5 default.
+
 ## Requirements
 
 - Tested: Linux, RTX 3060 12 GB, Core i5-12400, 16 GB installed RAM.

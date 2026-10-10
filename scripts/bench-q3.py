@@ -12,6 +12,7 @@ import urllib.request
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--fixture', type=Path, default=root/'benchmarks/q3-fixtures.json')
 parser.add_argument('--url', default='http://127.0.0.1:8094')
 parser.add_argument('--output', type=Path, required=True)
 parser.add_argument('--context', type=int, choices=[98304, 131072], default=131072)
@@ -24,7 +25,7 @@ if not 0 <= args.occupied_records <= 4100 or args.gpu_index < 0:
     parser.error('Invalid record count or GPU index')
 seeds = [int(s) for s in args.seeds.split(',')]
 url = args.url.rstrip('/')
-fixture = json.loads((root/'benchmarks/q3-fixtures.json').read_text())
+fixture = json.loads(args.fixture.read_text())
 def get(path):
     with urllib.request.urlopen(url + path, timeout=10) as r:
         return json.load(r)
@@ -54,7 +55,7 @@ def monitor():
         stop.wait(1)
 thread = threading.Thread(target=monitor, daemon=True)
 thread.start()
-report = dict(label=args.label, context=args.context, seeds=seeds, occupiedRecords=args.occupied_records, runs=[], status='running')
+report = dict(fixtureSha256=hashlib.sha256(args.fixture.read_bytes()).hexdigest(), label=args.label, context=args.context, seeds=seeds, occupiedRecords=args.occupied_records, runs=[], status='running')
 try:
     post({'messages':[{'role':'user','content':'Say ready.'}],'max_tokens':16,'chat_template_kwargs':{'enable_thinking':False}})
     for seed in seeds:

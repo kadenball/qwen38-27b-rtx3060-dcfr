@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-10",
+  "variant": "fast",
+  "scope": "Source export and model-free checks, separate from the October 8 model-loaded measurements.",
+  "baseRevision": "c060ca974c773c7c3d17fd1b66dc9d312bc292c0",
+  "sourceManifest": "patches/Q3_FAST_SOURCE_SHA256SUMS",
+  "checks": {
+    "zeroFuzzPatchReplayFromPinnedArchive": "passed",
+    "modifiedSourceHashes": "passed",
+    "releaseTests": {"status": "passed", "count": 12},
+    "automaticSetupTests": {"status": "passed", "count": 26},
+    "freshCpuServerBuild": "passed",
+    "cpuMultiQueryWidthsTwoThroughSix": "passed",
+    "partialPrefetchCleanup": "passed",
+    "completeRecurrentCheckpointCodec": "passed",
+    "probabilityVerifier": {
+      "status": "passed",
+      "marginalTrials": 1200000,
+      "twoTokenSequenceTrials": 1200000,
+      "additionalChecks": ["acceptance overlap", "reset", "clone", "copy"]
+    },
+    "freshCudaBuild": "not_run",
+    "freshModelLoadedGpuRerun": "not_run"
+  },
+  "build": {
+    "compiler": "GNU C/C++ 16.1.1",
+    "type": "Release",
+    "cuda": false,
+    "nativeCpu": true,
+    "parallelJobs": 1
+  },
+  "limitations": [
+    "The CPU build does not compile or exercise CUDA allocator and kernel paths.",
+    "The historical measured runtime used separately compiled experimental libraries.",
+    "No new throughput or full-128K-occupancy claim follows from these publication checks."
+  ]
+}

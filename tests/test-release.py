@@ -36,7 +36,8 @@ class ReleaseTests(unittest.TestCase):
 
     def test_profiles(self):
         for variant, context, blocks, output in [('candidate','98304',36,32768),('candidate','131072',46,65536),
-                                                 ('baseline','98304',44,32768),('baseline','131072',54,65536)]:
+                                                 ('baseline','98304',44,32768),('baseline','131072',54,65536),
+                                                 ('fast','131072',46,65536)]:
             with self.subTest(variant=variant, context=context):
                 result = self.launch(Q3_VARIANT=variant, CONTEXT=context, HOST_FFN_BLOCKS=str(blocks), MAX_OUTPUT_TOKENS=str(output))
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -50,6 +51,23 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(args.count('--spec-type'), 1)
                 self.assertEqual(value('--override-tensor'), r'blk\.('+'|'.join(map(str, range(blocks)))+r')\.ffn_(gate|up)\.weight=CPU')
                 self.assertIn('--no-mmproj', args)
+                if variant == 'fast':
+                    self.assertEqual(value('--spec-draft-sampling'), 'probabilistic')
+                    self.assertEqual(value('--alias'), 'routeweaver-q3-fast-131072')
+                else:
+                    self.assertNotIn('--spec-draft-sampling', args)
+
+    def test_fast_defaults_and_env_isolation(self):
+        # Inherited experiment flags must not leak into the older default.
+        for variant, context, expected in [('fast','131072','1:2560:6:4096:1'),
+                                          ('candidate','98304','unset:unset:unset:unset:1')]:
+            script = 'source scripts/q3-env.sh; printf "%s:%s:%s:%s:%s" "${LLAMA_CUDA_SPARSE_KV-unset}" "${GGML_CUDA_RESIDENT_MIB-unset}" "${GGML_CUDA_Q3_ROW_TILES-unset}" "${LLAMA_Q3_RESERVE_TOKENS-unset}" "$LLAMA_GDN_COMPLETE_CHECKPOINTS"'
+            env = dict(os.environ, Q3_VARIANT=variant, CONTEXT=context,
+                       LLAMA_CUDA_SPARSE_KV='99', GGML_CUDA_RESIDENT_MIB='9999',
+                       GGML_CUDA_Q3_ROW_TILES='99', LLAMA_Q3_RESERVE_TOKENS='99999')
+            result = subprocess.run(['bash','-e','-c',script], cwd=ROOT, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, expected)
 
     def test_vision_and_all_gpu(self):
         result = self.launch(HOST_FFN_BLOCKS='0', MMPROJ_PATH='/example/projector.gguf')
@@ -62,7 +80,9 @@ class ReleaseTests(unittest.TestCase):
     def test_invalid_profiles(self):
         for settings in [{'CONTEXT':'32768'}, {'CONTEXT':'131073'}, {'HOST_FFN_BLOCKS':'65'},
                          {'THREADS':'0'}, {'PORT':'65536'}, {'MTP_DEPTH':'11'}, {'MAX_OUTPUT_TOKENS':'131072'},
-                         {'HOST_FFN_BLOCKS':'08'}, {'Q3_VARIANT':'unknown'}, {'THREADS':'1; false'}]:
+                         {'HOST_FFN_BLOCKS':'08'}, {'Q3_VARIANT':'unknown'}, {'THREADS':'1; false'},
+                         {'Q3_VARIANT':'fast','CONTEXT':'98304'},
+                         {'Q3_VARIANT':'fast','MMPROJ_PATH':'projector.gguf'}]:
             with self.subTest(settings=settings):
                 self.assertNotEqual(self.launch(**settings).returncode, 0)
 
@@ -99,8 +119,59 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(report['checks'][name], 'passed')
         self.assertIsInstance(report['standaloneLargeModelGpuRerun'], bool)
 
+    def test_fast_results_recompute(self):
+        report = json.loads((ROOT/'benchmarks/q3-fast-20261008.json').read_text())
+        self.assertEqual(report['contextCapacity'], 131072)
+        expected = {'short': (3, 3), 'heldout': (8, 1), 'occupied30k': (1, 1)}
+        for suite in report['suites']:
+            cells, seeds = expected[suite['name']]
+            self.assertEqual(len(suite['comparison']['cells']), cells)
+            a, b = suite['arms']
+            self.assertEqual(a['arm'], 'control')
+            self.assertEqual(b['arm'], 'candidate')
+            for arm in [a, b]:
+                self.assertEqual(arm['status'], 'passed')
+                self.assertEqual(len(arm['seeds']), seeds)
+                self.assertEqual(len(arm['runs']), cells*seeds)
+                self.assertEqual(arm['context'], 131072)
+            key = lambda row: (row['prompt'], row['seed'])
+            left = {key(row):row for row in a['runs']}
+            right = {key(row):row for row in b['runs']}
+            self.assertEqual(left.keys(), right.keys())
+            for k in left:
+                self.assertEqual(left[k]['outputMessageSha256'], right[k]['outputMessageSha256'])
+                for field in ['cache_n', 'prompt_n', 'predicted_n', 'draft_n', 'draft_n_accepted']:
+                    self.assertEqual(left[k]['timings'][field], right[k]['timings'][field])
+                self.assertEqual(left[k]['timings']['cache_n'], 0)
+            for cell in suite['comparison']['cells']:
+                for arm, name in [(a,'control'), (b,'candidate')]:
+                    rows = [r for r in arm['runs'] if r['prompt'] == cell['prompt']]
+                    values = [r['timings']['predicted_per_second'] for r in rows]
+                    stats = cell[name]
+                    self.assertAlmostEqual(statistics.mean(values), stats['mean'])
+                    self.assertAlmostEqual(min(values), stats['minimum'])
+                    self.assertAlmostEqual(max(values), stats['maximum'])
+                    if seeds > 1:
+                        self.assertAlmostEqual(statistics.stdev(values), stats['standardDeviation'])
+                    else:
+                        self.assertIsNone(stats['standardDeviation'])
+                    accept = [r['timings']['draft_n_accepted']/r['timings']['draft_n'] for r in rows]
+                    self.assertAlmostEqual(statistics.mean(accept), stats['meanDraftAcceptance'])
+                self.assertAlmostEqual(100*(cell['candidate']['mean']/cell['control']['mean']-1), cell['speedupPercent'])
+            if suite['name'] == 'occupied30k':
+                self.assertEqual(b['runs'][0]['timings']['prompt_n'], 30425)
+            if suite['name'] == 'heldout':
+                digest = hashlib.sha256((ROOT/'benchmarks/q3-fast-heldout-fixtures.json').read_bytes()).hexdigest()
+                self.assertEqual(b['fixtureSha256'], digest)
+                hard = [r for r in b['runs'] if r['prompt'] != 'easy-counting-anchor']
+                # llama.cpp's generation timer excludes each request's first token.
+                aggregate = sum(r['timings']['predicted_n']-1 for r in hard)/(sum(r['timings']['predicted_ms'] for r in hard)/1000)
+                self.assertAlmostEqual(aggregate, 37.03, delta=0.01)
+
     def test_local_markdown_links(self):
-        documents = list(ROOT.glob('*.md')) + list((ROOT/'docs').rglob('*.md')) + list((ROOT/'benchmarks').glob('*.md'))
+        # Check the release boundary, not unrelated untracked research notes.
+        names = [line.split('  ', 1)[1] for line in (ROOT/'SHA256SUMS').read_text().splitlines()]
+        documents = [ROOT/name for name in names if name.endswith('.md')]
         for doc in documents:
             text = re.sub(r'```.*?```', '', doc.read_text(), flags=re.S)
             for target in re.findall(r'\[[^\]]*\]\(([^\s)]+)\)', text):

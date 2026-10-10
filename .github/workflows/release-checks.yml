@@ -7,6 +7,11 @@ permissions:
   contents: read
 jobs:
   package-and-cpu:
+    strategy:
+      matrix:
+        variant: [candidate, fast]
+    env:
+      Q3_VARIANT: ${{ matrix.variant }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -15,8 +20,8 @@ jobs:
           persist-credentials: false
       - name: Packaging and benchmark consistency
         run: |
-          python3 tests/test-release.py
-          python3 tests/test-autotune.py
+          env -u Q3_VARIANT python3 tests/test-release.py
+          env -u Q3_VARIANT python3 tests/test-autotune.py
       - name: Prepare exact source
         run: |
           sudo apt-get update
@@ -24,8 +29,8 @@ jobs:
           PREPARE_ONLY=1 ./scripts/build-q3.sh
       - name: Model-free CPU build
         run: |
-          cmake -S third_party/llama.cpp-q3-candidate -B build/q3-candidate -G Ninja \
+          cmake -S "third_party/llama.cpp-q3-$Q3_VARIANT" -B "build/q3-$Q3_VARIANT" -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_NATIVE=ON \
             -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_CURL=OFF
-          cmake --build build/q3-candidate --target llama-server --parallel 2
+          cmake --build "build/q3-$Q3_VARIANT" --target llama-server --parallel 2
           ./scripts/check-q3.sh

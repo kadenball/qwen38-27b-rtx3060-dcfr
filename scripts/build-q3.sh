@@ -6,7 +6,8 @@ variant="${Q3_VARIANT:-candidate}"
 case "$variant" in
     candidate) pins=Q3_SOURCE_SHA256SUMS ;;
     baseline) pins=Q3_BASELINE_SOURCE_SHA256SUMS ;;
-    *) echo 'Q3_VARIANT must be candidate or baseline.' >&2; exit 2 ;;
+    fast) pins=Q3_FAST_SOURCE_SHA256SUMS ;;
+    *) echo 'Q3_VARIANT must be candidate, baseline or fast.' >&2; exit 2 ;;
 esac
 source_dir="$root/third_party/llama.cpp-q3-$variant"
 build_dir="$root/build/q3-$variant"
@@ -26,7 +27,8 @@ if [[ ! -d "$source_dir" ]]; then
     candidate="$staging/llama.cpp-$revision"
     tar -xzf "$staging/source.tar.gz" -C "$staging"
     overlays=(llama-cpp-dcfr-research.patch llama-cpp-q4-interactive.patch llama-cpp-q3-cpu.patch llama-cpp-q3-prefetch.patch)
-    [[ "$variant" != candidate ]] || overlays+=(llama-cpp-q3-cache-safe.patch)
+    [[ "$variant" == baseline ]] || overlays+=(llama-cpp-q3-cache-safe.patch)
+    [[ "$variant" != fast ]] || overlays+=(llama-cpp-q3-fast.patch)
     for overlay in "${overlays[@]}"; do
         patch --batch --fuzz=0 -p1 -d "$candidate" -i "$root/patches/$overlay"
     done

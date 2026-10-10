@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Maintainer helper: refresh the release manifest, excluding ignored artifacts."""
+"""Refresh the release manifest. Stage intended new files first; ignore untracked work."""
 import hashlib
 from pathlib import Path
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
-names = subprocess.check_output(['git', 'ls-files', '-co', '--exclude-standard', '-z'], cwd=root).decode().split('\0')
+names = subprocess.check_output(['git', 'ls-files', '-z'], cwd=root).decode().split('\0')
 rows = []
 for name in sorted(set(names) - {'', 'SHA256SUMS'}):
     path = root / name

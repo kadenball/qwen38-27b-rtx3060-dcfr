@@ -1,0 +1,1520 @@
+--- a/common/arg.cpp
++++ b/common/arg.cpp
+@@ -4134,6 +4134,21 @@
+         }
+     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_BACKEND_SAMPLING"));
+     add_opt(common_arg(
++        {"--spec-draft-sampling"}, "{greedy,probabilistic}",
++        string_format("how the draft is sampled: greedy takes its argmax, probabilistic samples it and has "
++                      "the target verify by rejection sampling (default: %s)",
++                      params.speculative.draft.probabilistic ? "probabilistic" : "greedy"),
++        [](common_params & params, const std::string & value) {
++            if (value == "greedy") {
++                params.speculative.draft.probabilistic = false;
++            } else if (value == "probabilistic") {
++                params.speculative.draft.probabilistic = true;
++            } else {
++                throw std::invalid_argument("invalid value, must be one of: greedy, probabilistic");
++            }
++        }
++    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_SAMPLING"));
++    add_opt(common_arg(
+         {"--spec-draft-device", "-devd", "--device-draft"}, "<dev1,dev2,..>",
+         "comma-separated list of devices to use for offloading the draft model (none = don't offload)\n"
+         "use --list-devices to see a list of available devices",
+--- a/common/common.h
++++ b/common/common.h
+@@ -330,6 +330,8 @@
+ 
+     bool backend_sampling = true; // offload draft sampling to the backend (default: on)
+ 
++    bool probabilistic = false; // sample the draft and verify by rejection, instead of argmax and match
++
+     common_params_model mparams;
+ 
+     llama_context * ctx_tgt = nullptr;
+--- a/common/sampling.cpp
++++ b/common/sampling.cpp
+@@ -12,6 +12,7 @@
+ #include <climits>
+ #include <cmath>
+ #include <cstring>
++#include <random>
+ #include <unordered_map>
+ #include <vector>
+ 
+@@ -121,10 +122,14 @@
+ 
+     llama_token_data_array cur_p;
+ 
++    // for rejection sampling; independent of the draft, or the target distribution is not preserved
++    std::mt19937 rng;
++
+     void reset() {
+         prev.clear();
+ 
+         llama_sampler_reset(chain);
++        rng.seed(llama_sampler_get_seed(chain) ^ 0x9e3779b9u);
+     }
+ 
+     void set_logits(struct llama_context * ctx, int idx) {
+@@ -432,6 +437,8 @@
+         /* .prev    = */ ring_buffer<llama_token>(std::max(32, params.n_prev)),
+         /* .cur     = */ {},
+         /* .cur_p   = */ {},
++        // mix it, the chain and the draft are seeded from this one too
++        /* .rng     = */ std::mt19937(llama_sampler_get_seed(chain) ^ 0x9e3779b9u),
+     };
+ 
+     return result;
+@@ -515,9 +522,14 @@
+         /* .prev    = */ gsmpl->prev,
+         /* .cur     = */ gsmpl->cur,
+         /* .cur_p   = */ gsmpl->cur_p,
++        /* .rng     = */ gsmpl->rng,
+     };
+ }
+ 
++void common_sampler_copy_rejection_rng(const common_sampler * src, common_sampler * dst) {
++    dst->rng = src->rng;
++}
++
+ void common_sampler_copy(const common_sampler * src, common_sampler * dst) {
+     if (!src || !dst || src == dst) {
+         return;
+@@ -535,6 +547,7 @@
+     dst->cur        = src->cur;
+     dst->cur_p      = src->cur_p;
+     dst->cur_p.data = src->cur_p.data ? dst->cur.data() : nullptr; // re-point to dst's buffer
++    dst->rng        = src->rng;
+     dst->t_total_us = src->t_total_us;
+ }
+ 
+@@ -695,6 +708,124 @@
+     }
+ 
+     if (i == draft.size()) {
++        const llama_token id = common_sampler_sample(gsmpl, ctx, idxs[i], grammar_first);
++
++        common_sampler_accept(gsmpl, id, true);
++
++        result.push_back(id);
++    }
++
++    return result;
++}
++
++static float prob_of(const llama_token_data * data, size_t n, llama_token id) {
++    for (size_t k = 0; k < n; ++k) {
++        if (data[k].id == id) {
++            return data[k].p;
++        }
++    }
++    return 0.0f;
++}
++
++// Accept a drafted token with probability min(1, p/q), else draw from norm(max(0, p - q)).
++// Preserves the target distribution exactly, and accepts more often than matching does when the
++// draft samples instead of taking its argmax.
++std::vector<llama_token> common_sampler_sample_and_accept_n_rejection(struct common_sampler * gsmpl, struct llama_context * ctx, const std::vector<int> & idxs, const llama_tokens & draft, const std::vector<std::vector<llama_token_data>> & draft_q, bool grammar_first) {
++    GGML_ASSERT(idxs.size()    == draft.size() + 1 && "idxs.size() must be draft.size() + 1");
++    GGML_ASSERT(draft_q.size() == draft.size() && "draft_q must have one entry per draft token");
++
++    std::vector<llama_token> result;
++    result.reserve(idxs.size());
++
++    // draws come from the sampler's own stream, so they stay independent of what was drafted
++    std::uniform_real_distribution<float> uni(0.0f, 1.0f);
++
++    std::vector<llama_token_data> residual;
++
++    std::vector<llama_token_data> cand; // candidate array masked by the grammar, if there is one
++
++    size_t i = 0;
++    for (; i < draft.size(); i++) {
++        // leaves the target distribution in the candidate array
++        const llama_token id_tgt = common_sampler_sample(gsmpl, ctx, idxs[i], grammar_first);
++
++        const auto * cur_p = common_sampler_get_candidates(gsmpl, true);
++        const auto & q     = draft_q[i];
++
++        const bool masked = !grammar_first && grammar_should_apply(gsmpl);
++        if (masked) {
++            cand.assign(cur_p->data, cur_p->data + cur_p->size);
++            llama_token_data_array arr = { cand.data(), cand.size(), -1, false };
++            llama_sampler_apply(gsmpl->grmr, &arr);
++        }
++
++        // a candidate the grammar rejects carries no probability, whatever the target thinks
++        auto p_raw = [&](size_t k) {
++            return masked && cand[k].logit == -INFINITY ? 0.0f : cur_p->data[k].p;
++        };
++
++        // masking drops probability mass, so rescale what is left or the residual is over-weighted
++        float p_sum = 0.0f;
++        if (masked) {
++            for (size_t k = 0; k < cur_p->size; ++k) {
++                p_sum += p_raw(k);
++            }
++        }
++
++        const float p_norm = masked && p_sum > 0.0f ? 1.0f/p_sum : 1.0f;
++
++        auto p_of = [&](size_t k) {
++            return p_raw(k)*p_norm;
++        };
++
++        // q_x is never 0 for a token the draft produced, but guard the divide
++        const float q_x = prob_of(q.data(), q.size(), draft[i]);
++
++        float p_x = 0.0f;
++        for (size_t k = 0; k < cur_p->size; ++k) {
++            if (cur_p->data[k].id == draft[i]) {
++                p_x = p_of(k);
++                break;
++            }
++        }
++
++        if (q_x > 0.0f && (p_x >= q_x || uni(gsmpl->rng) < p_x / q_x)) {
++            common_sampler_accept(gsmpl, draft[i], true);
++            result.push_back(draft[i]);
++            continue;
++        }
++
++        // rejected: tokens outside q's support keep all of p
++        residual.clear();
++        float sum = 0.0f;
++        for (size_t k = 0; k < cur_p->size; ++k) {
++            const float r = p_of(k) - prob_of(q.data(), q.size(), cur_p->data[k].id);
++            if (r > 0.0f) {
++                residual.push_back({ cur_p->data[k].id, 0.0f, r });
++                sum += r;
++            }
++        }
++
++        llama_token id = id_tgt;
++        if (sum > 0.0f) {
++            float u = uni(gsmpl->rng) * sum;
++            id = residual.back().id;
++            for (const auto & e : residual) {
++                u -= e.p;
++                if (u <= 0.0f) {
++                    id = e.id;
++                    break;
++                }
++            }
++        }
++
++        common_sampler_accept(gsmpl, id, true);
++        result.push_back(id);
++
++        break;
++    }
++
++    if (i == draft.size()) {
+         const llama_token id = common_sampler_sample(gsmpl, ctx, idxs[i], grammar_first);
+ 
+         common_sampler_accept(gsmpl, id, true);
+--- a/common/sampling.h
++++ b/common/sampling.h
+@@ -85,6 +85,12 @@
+ //
+ std::vector<llama_token> common_sampler_sample_and_accept_n(struct common_sampler * gsmpl, struct llama_context * ctx, const std::vector<int> & idxs, const llama_tokens & draft, bool grammar_first = false);
+ 
++// Keep rejection draws consumed when restoring token history for a replay.
++void common_sampler_copy_rejection_rng(const common_sampler * src, common_sampler * dst);
++
++// as above, but verifies by rejection sampling; draft_q holds the draft's candidates per token
++std::vector<llama_token> common_sampler_sample_and_accept_n_rejection(struct common_sampler * gsmpl, struct llama_context * ctx, const std::vector<int> & idxs, const llama_tokens & draft, const std::vector<std::vector<llama_token_data>> & draft_q, bool grammar_first = false);
++
+ // assume idxs == [ 0, 1, 2, ..., draft.size() ]
+ std::vector<llama_token> common_sampler_sample_and_accept_n(struct common_sampler * gsmpl, struct llama_context * ctx, const llama_tokens & draft, bool grammar_first = false);
+ 
+--- a/common/speculative.cpp
++++ b/common/speculative.cpp
+@@ -1,4 +1,5 @@
+ #include "speculative.h"
++#include <cmath>
+ 
+ #include "common.h"
+ #include "ggml.h"
+@@ -29,6 +30,45 @@
+ #define SPEC_VOCAB_MAX_SIZE_DIFFERENCE  128
+ #define SPEC_VOCAB_CHECK_START_TOKEN_ID 5
+ 
++// Matching the target temperature is a draft heuristic, not a rejection-sampling requirement.
++// Only temperature and seed carry over; the draft keeps its own top_k.
++static void spec_retune(
++        std::vector<common_sampler_ptr> & smpls,
++        std::vector<common_params_sampling> & cfg,
++        const llama_model * model,
++        llama_seq_id seq_id,
++        float temp,
++        uint32_t seed) {
++    if (cfg.size() != smpls.size()) {
++        const size_t n_old = cfg.size();
++        cfg.resize(smpls.size());
++
++        // the initial sampler has no temperature, so no request may match the cache and skip a rebuild
++        for (size_t i = n_old; i < cfg.size(); ++i) {
++            cfg[i].temp = NAN;
++        }
++    }
++
++    auto & cur = cfg[seq_id];
++
++    if (cur.temp == temp && cur.seed == seed) {
++        return;
++    }
++
++    cur.temp = temp;
++    cur.seed = seed;
++
++    common_params_sampling sparams;
++    sparams.no_perf  = false;
++    sparams.top_k    = 10;
++    sparams.temp     = cur.temp;
++    // must be explicit, the default reseeds at random; mixed so it differs from the target's
++    sparams.seed     = cur.seed == LLAMA_DEFAULT_SEED ? cur.seed : cur.seed ^ 0x85ebca6bu;
++    sparams.samplers = { COMMON_SAMPLER_TYPE_TOP_K, COMMON_SAMPLER_TYPE_TEMPERATURE };
++
++    smpls[seq_id].reset(common_sampler_init(model, sparams));
++}
++
+ const std::map<std::string, common_speculative_type> common_speculative_type_from_name_map = {
+     {"none",          COMMON_SPECULATIVE_TYPE_NONE},
+     {"draft-simple",  COMMON_SPECULATIVE_TYPE_DRAFT_SIMPLE},
+@@ -180,6 +220,7 @@
+     llama_batch batch;
+ 
+     std::vector<common_sampler_ptr> smpls;
++    std::vector<common_params_sampling> smpls_cfg;
+ 
+     common_speculative_impl_draft_simple(const common_params_speculative & params, uint32_t n_seq)
+         : common_speculative_impl(COMMON_SPECULATIVE_TYPE_DRAFT_SIMPLE, n_seq)
+@@ -253,8 +294,8 @@
+         llama_batch_free(batch);
+     }
+ 
+-    void begin(llama_seq_id /*seq_id*/, const llama_tokens & /*prompt*/) override {
+-        // noop
++    void begin(llama_seq_id seq_id, const llama_tokens & /*prompt*/) override {
++        common_sampler_reset(smpls[seq_id].get());
+     }
+ 
+     bool process(const llama_batch & batch) override {
+@@ -292,7 +333,14 @@
+ 
+             n_drafting++;
+             drafting[seq_id] = true;
+-            common_sampler_reset(smpls[seq_id].get());
++            if (!params.probabilistic) {
++                dp.result_q = nullptr;
++            }
++            if (dp.result_q) {
++                spec_retune(smpls, smpls_cfg, llama_get_model(ctx_dft), seq_id, dp.temp, dp.seed);
++            } else {
++                common_sampler_reset(smpls[seq_id].get());
++            }
+ 
+             common_batch_add(batch, dp.id_last, dp.n_past, { seq_id }, true);
+         }
+@@ -318,7 +366,7 @@
+ 
+                 auto * smpl = smpls[seq_id].get();
+ 
+-                common_sampler_sample(smpl, ctx_dft, i_batch, true);
++                const llama_token id_sampled = common_sampler_sample(smpl, ctx_dft, i_batch, true);
+                 ++i_batch;
+ 
+                 const auto * cur_p = common_sampler_get_candidates(smpl, true);
+@@ -330,7 +378,7 @@
+                 }
+ 
+                 // add drafted token for each sequence
+-                const llama_token id = cur_p->data[0].id;
++                const llama_token id = dparams.at(seq_id).result_q ? id_sampled : cur_p->data[0].id;
+ 
+                 // only collect very high-confidence draft tokens
+                 if (cur_p->data[0].p < params.p_min) {
+@@ -343,7 +391,7 @@
+                 auto & dp = dparams.at(seq_id);
+                 auto & result = *dp.result;
+ 
+-                if (dp.alternatives != nullptr) {
++                if (dp.alternatives != nullptr && !dp.result_q) {
+                     const int32_t position = (int32_t) result.size();
+                     for (int k = 1; k < std::min(3, (int) cur_p->size); ++k) {
+                         dp.alternatives->push_back({
+@@ -358,6 +406,9 @@
+ 
+                 common_sampler_accept(smpl, id, true);
+                 result.push_back(id);
++                if (dp.result_q) {
++                    dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
++                }
+                 path_probability[seq_id] *= cur_p->data[0].p;
+ 
+                 if ((params.n_max <= (int) result.size()) ||
+@@ -1298,6 +1349,7 @@
+     llama_batch batch;
+ 
+     std::vector<common_sampler_ptr> smpls;
++    std::vector<common_params_sampling> smpls_cfg;
+ 
+     // backend sampler chain per seq, attached to ctx_dft
+     std::vector<llama_sampler *> backend_chains;
+@@ -1428,6 +1480,7 @@
+     }
+ 
+     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
++        common_sampler_reset(smpls[seq_id].get());
+         const int32_t N = (int32_t) prompt.size();
+         if (N <= 0) {
+             return;
+@@ -1507,7 +1560,13 @@
+                     continue;
+                 }
+ 
+-                set_h(i_batch_beg[seq_id], pending_h[seq_id].data());
++                const int idx = i_batch_beg[seq_id];
++                if (batch_in.pos[idx] == 0) {
++                    // A new sequence has no preceding target hidden state.
++                    std::memset(batch.embd + (size_t) idx * n_embd, 0, row_bytes);
++                } else {
++                    set_h(idx, pending_h[seq_id].data());
++                }
+             }
+ 
+             auto * mem_dft = llama_get_memory(ctx_dft);
+@@ -1583,7 +1642,14 @@
+ 
+             n_drafting++;
+             drafting[seq_id] = true;
+-            common_sampler_reset(smpls[seq_id].get());
++            if (!params.probabilistic) {
++                dp.result_q = nullptr;
++            }
++            if (dp.result_q) {
++                spec_retune(smpls, smpls_cfg, llama_get_model(ctx_dft), seq_id, dp.temp, dp.seed);
++            } else {
++                common_sampler_reset(smpls[seq_id].get());
++            }
+ 
+             common_batch_add(batch, dp.id_last, dp.n_past, { seq_id }, true);
+             std::memcpy(batch.embd + (size_t) (batch.n_tokens - 1) * n_embd, pending_h[seq_id].data(), row_bytes);
+@@ -1633,7 +1699,7 @@
+ 
+                 auto * smpl = smpls[seq_id].get();
+ 
+-                common_sampler_sample(smpl, ctx_dft, i_last[seq_id], true);
++                const llama_token id_sampled = common_sampler_sample(smpl, ctx_dft, i_last[seq_id], true);
+                 const float * h_row = llama_get_embeddings_nextn_ith(ctx_dft, i_last[seq_id]);
+ 
+                 const auto * cur_p = common_sampler_get_candidates(smpl, true);
+@@ -1645,7 +1711,7 @@
+                 }
+ 
+                 // add drafted token for each sequence
+-                const llama_token id = cur_p->data[0].id;
++                const llama_token id = dparams.at(seq_id).result_q ? id_sampled : cur_p->data[0].id;
+ 
+                 // only collect very high-confidence draft tokens
+                 if (cur_p->data[0].p < params.p_min) {
+@@ -1658,7 +1724,7 @@
+                 auto & dp = dparams.at(seq_id);
+                 auto & result = *dp.result;
+ 
+-                if (dp.alternatives != nullptr) {
++                if (dp.alternatives != nullptr && !dp.result_q) {
+                     const int32_t position = (int32_t) result.size();
+                     for (int k = 1; k < std::min(3, (int) cur_p->size); ++k) {
+                         dp.alternatives->push_back({
+@@ -1673,6 +1739,9 @@
+ 
+                 common_sampler_accept(smpl, id, true);
+                 result.push_back(id);
++                if (dp.result_q) {
++                    dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
++                }
+                 path_probability[seq_id] *= cur_p->data[0].p;
+ 
+                 if (params.n_max <= (int) result.size()) {
+@@ -2723,6 +2792,9 @@
+                     if (!result.empty() && (int) result.size() > dp.n_max) {
+                         SPC_DBG("truncating draft to %d tokens\n", dp.n_max);
+                         result.resize(dp.n_max);
++                        if (dp.result_q) {
++                            dp.result_q->resize(dp.n_max);
++                        }
+                     }
+                 }
+ 
+--- a/common/speculative.h
++++ b/common/speculative.h
+@@ -76,6 +76,10 @@
+     // this empty. It lets an executor build a verification tree without a
+     // second draft-model pass or changing the ordinary greedy-chain result.
+     std::vector<common_speculative_alternative> * alternatives = nullptr;
++
++    std::vector<std::vector<llama_token_data>> * result_q = nullptr;
++    float temp = 1.0f;
++    uint32_t seed = LLAMA_DEFAULT_SEED;
+ };
+ 
+ common_speculative_draft_params & common_speculative_get_draft_params(common_speculative * spec, llama_seq_id seq_id);
+--- a/ggml/src/ggml-backend.cpp
++++ b/ggml/src/ggml-backend.cpp
+@@ -1673,6 +1673,18 @@
+     const bool allocation_bounds = bounds_env && strcmp(bounds_env, "1") == 0;
+     const char * queue_env = getenv("GGML_CUDA_WEIGHT_PREFETCH_QUEUE");
+     const bool queue = prefetch && alias && allocation_bounds && queue_env && strcmp(queue_env, "1") == 0;
++    using resident_get_fn = const ggml_tensor * (*)(void *, ggml_backend_buffer_type_t, const ggml_tensor *, bool);
++    resident_get_fn resident_get = nullptr;
++    if (queue && getenv("GGML_CUDA_RESIDENT_WEIGHTS")) {
++        for (int b = 0; b < sched->n_backends; ++b) {
++            auto * reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(sched->backends[b]));
++            auto fn = (resident_get_fn) ggml_backend_reg_get_proc_address(reg, "ggml_backend_cuda_weight_cache_get");
++            if (fn) resident_get = fn;
++        }
++    }
++    const char * defer_env = getenv("GGML_CUDA_WEIGHT_DEFER_SYNC");
++    const bool cached_async = defer_env && strcmp(defer_env, "2") == 0;
++    const bool defer_sync = cached_async || (defer_env && strcmp(defer_env, "1") == 0);
+     struct queued_weight { ggml_tensor staged = {}; ggml_tensor * input = nullptr; int split = -1; } queued[3];
+     if (queue && sched->prefetch_backend) ggml_backend_synchronize(sched->prefetch_backend);
+     int next_buffer = 0;
+@@ -1728,6 +1740,22 @@
+                 }
+                 ggml_backend_tensor_copy(input, input_cpy);
+             } else {
++                if (cached_async && resident_get && !aliased && input->buffer && ggml_backend_buffer_is_host(input->buffer) &&
++                        ggml_backend_buffer_get_usage(input->buffer) == GGML_BACKEND_BUFFER_USAGE_WEIGHTS &&
++                        ggml_nbytes(input) >= 1024 * 1024 &&
++                        prefetch_alias_safe(sched, split_id, input_cpy, sched->prefetch_alias_reject, true)) {
++                    auto * cached = resident_get(sched, ggml_backend_get_default_buffer_type(split_backend), input, false);
++                    if (cached) {
++                        // Immutable copies need no destination write; eviction drains all readers.
++                        saved = *input_cpy;
++                        aliased = input_cpy;
++                        input_cpy->data = cached->data;
++                        input_cpy->buffer = cached->buffer;
++                        input_cpy->extra = cached->extra;
++                        for (auto & item : queued) if (item.input == input && item.split == split_id) item.input = nullptr;
++                        continue;
++                    }
++                }
+                 // wait for the split backend to finish using the input before overwriting it
+                 if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
+                     ggml_backend_event_wait(split_backend, sched->events[split_backend_id][sched->cur_copy]);
+@@ -1735,6 +1763,23 @@
+                     ggml_backend_synchronize(split_backend);
+                 }
+ 
++                if (resident_get && !aliased && input->buffer && ggml_backend_buffer_is_host(input->buffer) &&
++                        ggml_backend_buffer_get_usage(input->buffer) == GGML_BACKEND_BUFFER_USAGE_WEIGHTS &&
++                        ggml_nbytes(input) >= 1024 * 1024 &&
++                        prefetch_alias_safe(sched, split_id, input_cpy, sched->prefetch_alias_reject, true)) {
++                    auto * cached = resident_get(sched, ggml_backend_get_default_buffer_type(split_backend), input, true);
++                    if (cached) {
++                        ggml_backend_synchronize(split_backend);
++                        saved = *input_cpy;
++                        aliased = input_cpy;
++                        input_cpy->data = cached->data;
++                        input_cpy->buffer = cached->buffer;
++                        input_cpy->extra = cached->extra;
++                        for (auto & item : queued) if (item.input == input && item.split == split_id) item.input = nullptr;
++                        continue;
++                    }
++                }
++
+                 if (queue && !aliased) {
+                     for (int slot = 0; slot < 3; ++slot) {
+                         auto & item = queued[slot];
+@@ -1875,8 +1920,8 @@
+ 
+         if (queue && !sched->prefetch_failed &&
+                 strncmp(ggml_backend_dev_name(ggml_backend_get_device(split_backend)), "CUDA", 4) == 0) {
+-            // Drain previous readers; active_slot belongs to the graph not yet launched.
+-            ggml_backend_synchronize(split_backend);
++            bool readers_drained = !defer_sync;
++            if (readers_drained) ggml_backend_synchronize(split_backend);
+             for (int next = split_id + 1; next < sched->n_splits; ++next) {
+                 auto & future = splits[next];
+                 if (future.backend_id != split_backend_id) continue;
+@@ -1896,6 +1941,7 @@
+                             strcmp(ggml_backend_buft_name(ggml_backend_buffer_get_type(buffer)), "CUDA_Host") != 0 ||
+                             ggml_nbytes(weight) < 1024 * 1024 || ggml_nbytes(weight) > prefetch_capacity) continue;
+                     auto * destination = tensor_copy(weight, split_backend_id, sched->cur_copy);
++                    if (resident_get && resident_get(sched, ggml_backend_get_default_buffer_type(split_backend), weight, false)) continue;
+                     if (!prefetch_alias_safe(sched, next, destination, sched->prefetch_alias_reject, true)) continue;
+                     if (!sched->prefetch_backend) {
+                         auto * device = ggml_backend_get_device(split_backend);
+@@ -1914,6 +1960,11 @@
+                     }
+                     if (ggml_backend_get_device(sched->prefetch_backend) != ggml_backend_get_device(split_backend) ||
+                             ggml_backend_buft_get_alloc_size(ggml_backend_buffer_get_type(sched->prefetch_buffer), weight) > prefetch_capacity) continue;
++                    // Drain prior readers before reuse; active_slot is excluded above.
++                    if (!readers_drained) {
++                        ggml_backend_synchronize(split_backend);
++                        readers_drained = true;
++                    }
+                     auto & item = queued[free_slot];
+                     item.staged = *weight;
+                     item.staged.view_src = nullptr;
+@@ -2125,6 +2176,12 @@
+     if (sched == NULL) {
+         return;
+     }
++    for (int b = 0; b < sched->n_backends; ++b) {
++        using trim_fn = void (*)(void *, size_t);
++        auto * reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(sched->backends[b]));
++        auto trim = (trim_fn) ggml_backend_reg_get_proc_address(reg, "ggml_backend_cuda_weight_cache_trim");
++        if (trim) trim(sched, 0);
++    }
+     if (sched->prefetch_backend) ggml_backend_synchronize(sched->prefetch_backend);
+     for (int slot = 0; slot < 3; ++slot) ggml_backend_event_free(sched->queue_ready[slot]);
+     if (sched->prefetch_backend) {
+--- /dev/null
++++ b/ggml/src/ggml-cuda/fold-kernel.cuh
+@@ -0,0 +1,55 @@
++#pragma once
++#include "vecdotq.cuh"
++#include <type_traits>
++
++template<class T>
++static __device__ __forceinline__ float rw_fold_dot(const T * x,const block_q8_1 * y,int k,int q) {
++    if constexpr (std::is_same_v<T,block_iq3_xxs>) return vec_dot_iq3_xxs_q8_1(x,y,k,q);
++    if constexpr (std::is_same_v<T,block_iq3_s>) return vec_dot_iq3_s_q8_1(x,y,k,q);
++    if constexpr (std::is_same_v<T,block_iq2_s>) return vec_dot_iq2_s_q8_1(x,y,k,q);
++    if constexpr (std::is_same_v<T,block_iq2_xxs>) return vec_dot_iq2_xxs_q8_1(x,y,k,q);
++    if constexpr (std::is_same_v<T,block_iq2_xs>) return vec_dot_iq2_xs_q8_1(x,y,k,q);
++    if constexpr (std::is_same_v<T,block_q2_K>) return vec_dot_q2_K_q8_1(x,y,k,q);
++    if constexpr (std::is_same_v<T,block_iq4_xs>) return vec_dot_iq4_xs_q8_1(x,y,k,q);
++}
++
++template<class T,int R,bool row_first,int B>
++__global__ __launch_bounds__(32,B) void rw_folded(const T * x,const block_q8_1 * y,float * out,int kb,int rows) {
++    constexpr int vdr=std::is_same_v<T,block_q2_K>?VDR_Q2_K_Q8_1_MMVQ:
++        std::is_same_v<T,block_iq4_xs>?VDR_IQ4_XS_Q8_1_MMVQ:VDR_IQ2_XXS_Q8_1_MMVQ;
++    constexpr int qi=std::is_same_v<T,block_q2_K>?QI2_K:
++        std::is_same_v<T,block_iq4_xs>?QI4_XS:std::is_same_v<T,block_iq2_xs>?QI2_XS:
++        std::is_same_v<T,block_iq3_xxs>?QI3_XXS:std::is_same_v<T,block_iq3_s>?QI3_S:
++        std::is_same_v<T,block_iq2_s>?QI2_S:QI2_XXS;
++    constexpr int lanes=qi/vdr;
++    const int tid=threadIdx.x,row=blockIdx.x*R;
++    float sums[2][5][R]={};
++    for (int k=tid/lanes;k<kb;k+=64/lanes) {
++#pragma unroll
++        for (int part=0;part<2;++part) {
++            const int kx=k+part*32/lanes;
++            if (kx>=kb) continue;
++            if constexpr (row_first) {
++#pragma unroll
++                for (int i=0;i<R;++i) {
++#pragma unroll
++                    for (int j=0;j<5;++j) sums[part][j][i]+=rw_fold_dot(x,y+j*kb*8+kx*8,(row+i)*kb+kx,vdr*(tid%lanes));
++                }
++            } else {
++#pragma unroll
++                for (int j=0;j<5;++j) {
++#pragma unroll
++                    for (int i=0;i<R;++i) sums[part][j][i]+=rw_fold_dot(x,y+j*kb*8+kx*8,(row+i)*kb+kx,vdr*(tid%lanes));
++                }
++            }
++        }
++    }
++#pragma unroll
++    for (int j=0;j<5;++j) {
++#pragma unroll
++        for (int i=0;i<R;++i) {
++            const float value=warp_reduce_sum<32>(sums[0][j][i]+sums[1][j][i]);
++            if (tid==i) out[j*rows+row+i]=value;
++        }
++    }
++}
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -1,9 +1,13 @@
+ #include "ggml-cuda.h"
+ #include "ggml-impl.h"
+ #include "ggml-backend-impl.h"
++#include "ggml-alloc.h"
+ 
+ #include "ggml-cuda/allreduce.cuh"
+ #include "ggml-cuda/common.cuh"
++#if defined(GGML_USE_VMM)
++#include "ggml-cuda/sparse-kv.cuh"
++#endif
+ #include "ggml-cuda/acc.cuh"
+ #include "ggml-cuda/add-id.cuh"
+ #include "ggml-cuda/arange.cuh"
+@@ -729,6 +733,9 @@
+     int device;
+     void * dev_ptr = nullptr;
+     std::string name;
++#if defined(GGML_USE_VMM)
++    std::unique_ptr<rw_cuda_sparse_buffer> sparse;
++#endif
+ 
+     ggml_backend_cuda_buffer_context(int device, void * dev_ptr) :
+         device(device), dev_ptr(dev_ptr),
+@@ -736,6 +743,14 @@
+     }
+ 
+     ~ggml_backend_cuda_buffer_context() {
++#if defined(GGML_USE_VMM)
++        if (sparse) {
++            ggml_cuda_set_device(device);
++            GGML_LOG_INFO("SPARSE_KV release reserved=%.2f MiB committed=%.2f MiB\n", sparse->size()/1048576.0, sparse->committed()/1048576.0);
++            sparse.reset();
++            return;
++        }
++#endif
+         CUDA_CHECK(cudaFree(dev_ptr));
+     }
+ };
+@@ -749,6 +764,49 @@
+     return buffer->iface.free_buffer == ggml_backend_cuda_buffer_free_buffer;
+ }
+ 
++static void ggml_cuda_weight_cache_reclaim(size_t bytes);
++
++static bool ggml_backend_cuda_sparse_ensure(const ggml_tensor * tensor, size_t offset, size_t size) {
++#if defined(GGML_USE_VMM)
++    ggml_backend_buffer_t buffer = tensor->buffer;
++    if (!buffer || !ggml_backend_buffer_is_cuda(buffer)) return true;
++    auto * ctx = (ggml_backend_cuda_buffer_context *) buffer->context;
++    if (!ctx->sparse) return true;
++    ggml_cuda_set_device(ctx->device);
++    const uintptr_t start = (uintptr_t) tensor->data - (uintptr_t) ctx->dev_ptr;
++    if (start > ctx->sparse->size() || offset > ctx->sparse->size() - start) return false;
++    return ctx->sparse->ensure(start + offset, size, ggml_cuda_weight_cache_reclaim);
++#else
++    GGML_UNUSED(tensor); GGML_UNUSED(offset); GGML_UNUSED(size);
++    return true;
++#endif
++}
++
++static bool ggml_backend_cuda_buffer_is_sparse(ggml_backend_buffer_t buffer) {
++#if defined(GGML_USE_VMM)
++    return buffer && ggml_backend_buffer_is_cuda(buffer) && ((ggml_backend_cuda_buffer_context *) buffer->context)->sparse != nullptr;
++#else
++    GGML_UNUSED(buffer);
++    return false;
++#endif
++}
++
++static thread_local bool ggml_cuda_alloc_sparse_kv = false;
++
++static void ggml_backend_cuda_sparse_ensure_2d(const ggml_tensor * tensor, size_t offset, size_t size, size_t n_copies, size_t stride) {
++    for (size_t i = 0; i < n_copies; ++i) {
++        GGML_ASSERT(!stride || i <= (SIZE_MAX - offset) / stride);
++        GGML_ASSERT(ggml_backend_cuda_sparse_ensure(tensor, offset + i * stride, size));
++    }
++}
++
++static ggml_backend_buffer_t ggml_backend_cuda_alloc_sparse_kv(ggml_context * ctx, ggml_backend_buffer_type_t buft) {
++    ggml_cuda_alloc_sparse_kv = true;
++    auto * result = ggml_backend_alloc_ctx_tensors_from_buft(ctx, buft);
++    ggml_cuda_alloc_sparse_kv = false;
++    return result;
++}
++
+ static void * ggml_backend_cuda_buffer_get_base(ggml_backend_buffer_t buffer) {
+     ggml_backend_cuda_buffer_context * ctx = (ggml_backend_cuda_buffer_context *)buffer->context;
+     return ctx->dev_ptr;
+@@ -769,6 +827,7 @@
+ 
+         if (padded_size > original_size) {
+             ggml_cuda_set_device(ctx->device);
++            if (!ggml_backend_cuda_sparse_ensure(tensor, original_size, padded_size - original_size)) return GGML_STATUS_ALLOC_FAILED;
+             CUDA_CHECK(cudaMemset((char *)tensor->data + original_size, 0, padded_size - original_size));
+         }
+     }
+@@ -776,6 +835,7 @@
+ }
+ 
+ static void ggml_backend_cuda_buffer_memset_tensor(ggml_backend_buffer_t buffer, ggml_tensor * tensor, uint8_t value, size_t offset, size_t size) {
++    GGML_ASSERT(ggml_backend_cuda_sparse_ensure(tensor, offset, size));
+     ggml_backend_cuda_buffer_context * ctx = (ggml_backend_cuda_buffer_context *) buffer->context;
+ 
+     ggml_cuda_set_device(ctx->device);
+@@ -784,6 +844,7 @@
+ }
+ 
+ static void ggml_backend_cuda_buffer_set_tensor(ggml_backend_buffer_t buffer, ggml_tensor * tensor, const void * data, size_t offset, size_t size) {
++    GGML_ASSERT(ggml_backend_cuda_sparse_ensure(tensor, offset, size));
+     ggml_backend_cuda_buffer_context * ctx = (ggml_backend_cuda_buffer_context *) buffer->context;
+ 
+     ggml_cuda_set_device(ctx->device);
+@@ -792,6 +853,7 @@
+ }
+ 
+ static void ggml_backend_cuda_buffer_get_tensor(ggml_backend_buffer_t buffer, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
++    GGML_ASSERT(ggml_backend_cuda_sparse_ensure(tensor, offset, size));
+     ggml_backend_cuda_buffer_context * ctx = (ggml_backend_cuda_buffer_context *) buffer->context;
+ 
+     ggml_cuda_set_device(ctx->device);
+@@ -801,9 +863,15 @@
+ 
+ static void ggml_backend_cuda_buffer_set_tensor_2d(ggml_backend_buffer_t buffer, struct ggml_tensor * tensor, const void * data,
+         size_t offset, size_t size, size_t n_copies, size_t stride_tensor, size_t stride_data) {
++    ggml_backend_cuda_sparse_ensure_2d(tensor, offset, size, n_copies, stride_tensor);
+     ggml_backend_cuda_buffer_context * ctx = (ggml_backend_cuda_buffer_context *) buffer->context;
+ 
+     ggml_cuda_set_device(ctx->device);
++    if (ggml_backend_cuda_buffer_is_sparse(buffer)) {
++        for (size_t i = 0; i < n_copies; ++i) CUDA_CHECK(cudaMemcpyAsync((char *) tensor->data + offset + i * stride_tensor, (const char *) data + i * stride_data, size, cudaMemcpyHostToDevice, cudaStreamPerThread));
++        CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));
++        return;
++    }
+     CUDA_CHECK(cudaMemcpy2DAsync(
+         (char *) tensor->data + offset, stride_tensor, data, stride_data, size, n_copies, cudaMemcpyHostToDevice, cudaStreamPerThread));
+     CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));
+@@ -811,9 +879,15 @@
+ 
+ static void ggml_backend_cuda_buffer_get_tensor_2d(ggml_backend_buffer_t buffer, const struct ggml_tensor * tensor, void * data,
+         size_t offset, size_t size, size_t n_copies, size_t stride_tensor, size_t stride_data) {
++    ggml_backend_cuda_sparse_ensure_2d(tensor, offset, size, n_copies, stride_tensor);
+     ggml_backend_cuda_buffer_context * ctx = (ggml_backend_cuda_buffer_context *)buffer->context;
+ 
+     ggml_cuda_set_device(ctx->device);
++    if (ggml_backend_cuda_buffer_is_sparse(buffer)) {
++        for (size_t i = 0; i < n_copies; ++i) CUDA_CHECK(cudaMemcpyAsync((char *) data + i * stride_data, (const char *) tensor->data + offset + i * stride_tensor, size, cudaMemcpyDeviceToHost, cudaStreamPerThread));
++        CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));
++        return;
++    }
+     CUDA_CHECK(cudaMemcpy2DAsync(
+         data, stride_data, (const char *) tensor->data + offset, stride_tensor, size, n_copies, cudaMemcpyDeviceToHost, cudaStreamPerThread));
+     CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));
+@@ -821,6 +895,7 @@
+ 
+ static bool ggml_backend_cuda_buffer_cpy_tensor(ggml_backend_buffer_t buffer, const ggml_tensor * src, ggml_tensor * dst) {
+     if (ggml_backend_buffer_is_cuda(src->buffer)) {
++        if (!ggml_backend_cuda_sparse_ensure(src, 0, ggml_nbytes(src)) || !ggml_backend_cuda_sparse_ensure(dst, 0, ggml_nbytes(dst))) return false;
+         ggml_backend_cuda_buffer_context * src_ctx = (ggml_backend_cuda_buffer_context *)src->buffer->context;
+         ggml_backend_cuda_buffer_context * dst_ctx = (ggml_backend_cuda_buffer_context *)dst->buffer->context;
+         // compare the backing physical devices: distinct virtual devices may share one physical GPU,
+@@ -848,6 +923,12 @@
+     ggml_backend_cuda_buffer_context * ctx = (ggml_backend_cuda_buffer_context *)buffer->context;
+ 
+     ggml_cuda_set_device(ctx->device);
++#if defined(GGML_USE_VMM)
++    if (ctx->sparse) {
++        ctx->sparse->clear(value);
++        return;
++    }
++#endif
+     CUDA_CHECK(cudaMemsetAsync(ctx->dev_ptr, value, buffer->size, cudaStreamPerThread));
+     CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));
+ }
+@@ -887,6 +968,25 @@
+ 
+     ggml_cuda_set_device(buft_ctx->device);
+ 
++#if defined(GGML_USE_VMM)
++    if (ggml_cuda_alloc_sparse_kv && size > 0) {
++        if (ggml_backend_cuda_get_device_count() != 1 || !ggml_cuda_info().devices[buft_ctx->device].vmm) return nullptr;
++        CUDA_CHECK(cudaFree(nullptr));
++        try {
++            auto * ctx = new ggml_backend_cuda_buffer_context(buft_ctx->device, nullptr);
++            try {
++                ctx->sparse = std::make_unique<rw_cuda_sparse_buffer>(ggml_cuda_get_physical_device(buft_ctx->device), size);
++            } catch (...) { delete ctx; throw; }
++            ctx->dev_ptr = (void *) ctx->sparse->data();
++            GGML_LOG_INFO("SPARSE_KV reserve=%.2f MiB physical=0 MiB\n", size/1048576.0);
++            return ggml_backend_buffer_init(buft, ggml_backend_cuda_buffer_interface, ctx, size);
++        } catch (const std::exception & error) {
++            GGML_LOG_ERROR("SPARSE_KV reservation failed: %s\n", error.what());
++            return nullptr;
++        }
++    }
++#endif
++
+     void * dev_ptr;
+     cudaError_t err = ggml_cuda_device_malloc(&dev_ptr, size, buft_ctx->device);
+     if (err != cudaSuccess) {
+@@ -960,6 +1060,102 @@
+     return &ggml_backend_cuda_buffer_types[device];
+ }
+ 
++struct ggml_cuda_resident_weight {
++    void * owner;
++    const ggml_tensor * source;
++    const void * host_data;
++    size_t bytes;
++    ggml_tensor tensor;
++};
++
++static std::mutex ggml_cuda_weight_cache_mutex;
++static std::vector<std::unique_ptr<ggml_cuda_resident_weight>> ggml_cuda_resident_weights;
++static size_t ggml_cuda_resident_bytes = 0;
++static uint64_t ggml_cuda_resident_hits = 0, ggml_cuda_resident_copies = 0, ggml_cuda_resident_evictions = 0;
++
++// Caller holds the mutex and has drained all readers.
++static void ggml_cuda_weight_cache_trim_locked(void * owner, size_t retained) {
++    size_t owned_bytes = 0;
++    for (const auto & entry : ggml_cuda_resident_weights) if (!owner || entry->owner == owner) owned_bytes += entry->bytes;
++    for (size_t i = ggml_cuda_resident_weights.size(); i > 0 && owned_bytes > retained; --i) {
++        const auto & entry = ggml_cuda_resident_weights[i - 1];
++        if (owner && entry->owner != owner) continue;
++        owned_bytes -= entry->bytes;
++        ggml_cuda_resident_bytes -= entry->bytes;
++        ggml_backend_buffer_free(entry->tensor.buffer);
++        ggml_cuda_resident_weights.erase(ggml_cuda_resident_weights.begin() + i - 1);
++        ++ggml_cuda_resident_evictions;
++    }
++}
++
++static void ggml_backend_cuda_weight_cache_trim(void * owner, size_t retained) {
++    std::lock_guard<std::mutex> lock(ggml_cuda_weight_cache_mutex);
++    if (ggml_cuda_resident_weights.empty()) return;
++    ggml_cuda_set_device(0);
++    CUDA_CHECK(cudaDeviceSynchronize());
++    ggml_cuda_weight_cache_trim_locked(owner, retained);
++    GGML_LOG_INFO("RESIDENT_WEIGHTS retained=%.2f MiB hits=%llu copies=%llu evictions=%llu\n", ggml_cuda_resident_bytes/1048576.0, (unsigned long long) ggml_cuda_resident_hits, (unsigned long long) ggml_cuda_resident_copies, (unsigned long long) ggml_cuda_resident_evictions);
++}
++
++static void ggml_cuda_weight_cache_reclaim(size_t bytes) {
++    std::lock_guard<std::mutex> lock(ggml_cuda_weight_cache_mutex);
++    if (ggml_cuda_resident_weights.empty()) return;
++    size_t free_bytes, total_bytes;
++    CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes));
++    constexpr size_t reserve = 512 * 1024 * 1024;
++    if (free_bytes >= bytes + reserve) return;
++    CUDA_CHECK(cudaDeviceSynchronize());
++    const size_t needed = bytes + reserve - free_bytes;
++    ggml_cuda_weight_cache_trim_locked(nullptr, needed < ggml_cuda_resident_bytes ? ggml_cuda_resident_bytes - needed : 0);
++}
++
++static const ggml_tensor * ggml_backend_cuda_weight_cache_get(void * owner, ggml_backend_buffer_type_t buft, const ggml_tensor * source, bool populate) {
++    if (!owner || !ggml_backend_buft_is_cuda(buft) || ggml_backend_cuda_get_device_count() != 1 ||
++            source->view_src || source->op != GGML_OP_NONE || !ggml_is_contiguous(source) || !source->buffer ||
++            !ggml_backend_buffer_is_host(source->buffer) || ggml_backend_buffer_get_usage(source->buffer) != GGML_BACKEND_BUFFER_USAGE_WEIGHTS) return nullptr;
++    const char * enabled = getenv("GGML_CUDA_RESIDENT_WEIGHTS");
++    if (!enabled || strcmp(enabled, "1") != 0) return nullptr;
++    std::lock_guard<std::mutex> lock(ggml_cuda_weight_cache_mutex);
++    for (const auto & entry : ggml_cuda_resident_weights) {
++        if (entry->owner == owner && entry->source == source && entry->host_data == source->data) {
++            GGML_ASSERT(entry->tensor.type == source->type && memcmp(entry->tensor.ne, source->ne, sizeof(source->ne)) == 0);
++            ++ggml_cuda_resident_hits;
++            return &entry->tensor;
++        }
++    }
++    if (!populate) return nullptr;
++    const size_t bytes = ggml_backend_buft_get_alloc_size(buft, source);
++    const char * limit_env = getenv("GGML_CUDA_RESIDENT_MIB");
++    const size_t limit_mib = limit_env ? strtoul(limit_env, nullptr, 10) : 2048;
++    if (!limit_mib || limit_mib > 4096) return nullptr;
++    const size_t limit = limit_mib * 1024 * 1024;
++    if (ggml_cuda_resident_bytes > limit || bytes > limit - ggml_cuda_resident_bytes) return nullptr;
++    ggml_cuda_set_device(0);
++    size_t free_bytes, total_bytes;
++    CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes));
++    if (free_bytes < bytes + 512 * 1024 * 1024) return nullptr;
++    auto entry = std::make_unique<ggml_cuda_resident_weight>();
++    entry->owner = owner;
++    entry->source = source;
++    entry->host_data = source->data;
++    entry->bytes = bytes;
++    entry->tensor = *source;
++    entry->tensor.buffer = ggml_backend_buft_alloc_buffer(buft, bytes);
++    if (!entry->tensor.buffer) return nullptr;
++    entry->tensor.data = ggml_backend_buffer_get_base(entry->tensor.buffer);
++    entry->tensor.extra = nullptr;
++    if (ggml_backend_buffer_init_tensor(entry->tensor.buffer, &entry->tensor) != GGML_STATUS_SUCCESS) {
++        ggml_backend_buffer_free(entry->tensor.buffer);
++        return nullptr;
++    }
++    ggml_backend_tensor_set(&entry->tensor, source->data, 0, ggml_nbytes(source));
++    auto * result = &entry->tensor;
++    ggml_cuda_resident_bytes += bytes;
++    ++ggml_cuda_resident_copies;
++    ggml_cuda_resident_weights.push_back(std::move(entry));
++    return result;
++}
++
+ // Communication context for multi-GPU AllReduce during tensor parallelism.
+ //
+ // Created once per meta backend instance.  Resources for the selected mode
+@@ -2433,6 +2629,7 @@
+ }
+ 
+ static void ggml_backend_cuda_set_tensor_async(ggml_backend_t backend, ggml_tensor * tensor, const void * data, size_t offset, size_t size) {
++    GGML_ASSERT(ggml_backend_cuda_sparse_ensure(tensor, offset, size));
+     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
+     ggml_backend_buffer_t buf = tensor->view_src ? tensor->view_src->buffer : tensor->buffer;
+ 
+@@ -2442,6 +2639,7 @@
+ }
+ 
+ static void ggml_backend_cuda_get_tensor_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
++    GGML_ASSERT(ggml_backend_cuda_sparse_ensure(tensor, offset, size));
+     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
+     ggml_backend_buffer_t buf = tensor->view_src ? tensor->view_src->buffer : tensor->buffer;
+ 
+@@ -2452,27 +2650,40 @@
+ 
+ static void ggml_backend_cuda_set_tensor_2d_async(ggml_backend_t backend, struct ggml_tensor * tensor, const void * data,
+         size_t offset, size_t size, size_t n_copies, size_t stride_tensor, size_t stride_data) {
++    ggml_backend_cuda_sparse_ensure_2d(tensor, offset, size, n_copies, stride_tensor);
+     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
+     ggml_backend_buffer_t buf = tensor->view_src ? tensor->view_src->buffer : tensor->buffer;
+ 
+     GGML_ASSERT(buf->buft == ggml_backend_cuda_buffer_type(cuda_ctx->device) && "unsupported buffer type");
+ 
++    if (ggml_backend_cuda_buffer_is_sparse(buf)) {
++        for (size_t i = 0; i < n_copies; ++i) CUDA_CHECK(cudaMemcpyAsync((char *) tensor->data + offset + i * stride_tensor, (const char *) data + i * stride_data, size, cudaMemcpyHostToDevice, cuda_ctx->stream()));
++        return;
++    }
++
+     CUDA_CHECK(cudaMemcpy2DAsync(
+         (char *) tensor->data + offset, stride_tensor, data, stride_data, size, n_copies, cudaMemcpyHostToDevice, cuda_ctx->stream()));
+ }
+ 
+ static void ggml_backend_cuda_get_tensor_2d_async(ggml_backend_t backend, const struct ggml_tensor * tensor, void * data,
+         size_t offset, size_t size, size_t n_copies, size_t stride_tensor, size_t stride_data) {
++    ggml_backend_cuda_sparse_ensure_2d(tensor, offset, size, n_copies, stride_tensor);
+     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
+     ggml_backend_buffer_t buf = tensor->view_src ? tensor->view_src->buffer : tensor->buffer;
+ 
+     GGML_ASSERT(buf->buft == ggml_backend_cuda_buffer_type(cuda_ctx->device) && "unsupported buffer type");
+ 
++    if (ggml_backend_cuda_buffer_is_sparse(buf)) {
++        for (size_t i = 0; i < n_copies; ++i) CUDA_CHECK(cudaMemcpyAsync((char *) data + i * stride_data, (const char *) tensor->data + offset + i * stride_tensor, size, cudaMemcpyDeviceToHost, cuda_ctx->stream()));
++        return;
++    }
++
+     CUDA_CHECK(cudaMemcpy2DAsync(
+         data, stride_data, (const char *) tensor->data + offset, stride_tensor, size, n_copies, cudaMemcpyDeviceToHost, cuda_ctx->stream()));
+ }
+ 
+ static bool ggml_backend_cuda_cpy_tensor_async(ggml_backend_t backend_src, ggml_backend_t backend_dst, const ggml_tensor * src, ggml_tensor * dst) {
++    if (!ggml_backend_cuda_sparse_ensure(src, 0, ggml_nbytes(src)) || !ggml_backend_cuda_sparse_ensure(dst, 0, ggml_nbytes(dst))) return false;
+     ggml_backend_buffer_t buf_src = src->view_src ? src->view_src->buffer : src->buffer;
+     ggml_backend_buffer_t buf_dst = dst->view_src ? dst->view_src->buffer : dst->buffer;
+ 
+@@ -5510,6 +5721,10 @@
+ 
+ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, const char * name) {
+     GGML_UNUSED(reg);
++    if (strcmp(name, "ggml_backend_cuda_alloc_sparse_kv") == 0) return (void *) ggml_backend_cuda_alloc_sparse_kv;
++    if (strcmp(name, "ggml_backend_cuda_sparse_ensure") == 0) return (void *) ggml_backend_cuda_sparse_ensure;
++    if (strcmp(name, "ggml_backend_cuda_weight_cache_get") == 0) return (void *) ggml_backend_cuda_weight_cache_get;
++    if (strcmp(name, "ggml_backend_cuda_weight_cache_trim") == 0) return (void *) ggml_backend_cuda_weight_cache_trim;
+     if (strcmp(name, "ggml_backend_comm_init") == 0) {
+         return (void *)ggml_backend_cuda_comm_init;
+     }
+--- a/ggml/src/ggml-cuda/mmvq.cu
++++ b/ggml/src/ggml-cuda/mmvq.cu
+@@ -2,10 +2,19 @@
+ #include "quantize.cuh"
+ #include "unary.cuh"
+ #include "vecdotq.cuh"
++#include "fold-kernel.cuh"
+ 
+ #include <cstdint>
+ #include <type_traits>
+ 
++template<ggml_type> struct rw_fold_quant;
++template<> struct rw_fold_quant<GGML_TYPE_IQ3_XXS> { using type = block_iq3_xxs; };
++template<> struct rw_fold_quant<GGML_TYPE_IQ3_S> { using type = block_iq3_s; };
++template<> struct rw_fold_quant<GGML_TYPE_IQ2_S> { using type = block_iq2_s; };
++template<> struct rw_fold_quant<GGML_TYPE_IQ2_XXS> { using type = block_iq2_xxs; };
++template<> struct rw_fold_quant<GGML_TYPE_IQ2_XS> { using type = block_iq2_xs; };
++template<> struct rw_fold_quant<GGML_TYPE_IQ4_XS> { using type = block_iq4_xs; };
++
+ typedef float (*vec_dot_q_cuda_t)(const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & kbx, const int & iqs);
+ 
+ static constexpr __device__ vec_dot_q_cuda_t get_vec_dot_q_cuda(ggml_type type) {
+@@ -541,7 +550,7 @@
+     return 1;
+ }
+ 
+-template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false, bool halve_iters = false>
++template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false, bool halve_iters = false, int row_override = 0, bool row_first = false>
+ __launch_bounds__(calc_nwarps(type, ncols_dst, get_device_table_id(), small_k, halve_iters)*ggml_cuda_get_physical_warp_size(), 1)
+ static __global__ void mul_mat_vec_q(
+         const void * vx_ptr, const void * vy_ptr, const int32_t * ids_ptr, const ggml_cuda_mm_fusion_args_device fusion, float * dst_ptr,
+@@ -560,7 +569,7 @@
+     constexpr int vdr = get_vdr_mmvq(type);
+     constexpr mmvq_parameter_table_id table_id = get_device_table_id();
+     constexpr int nwarps = calc_nwarps(type, ncols_dst, table_id, small_k, halve_iters);
+-    constexpr int rows_per_cuda_block = calc_rows_per_block(ncols_dst, table_id, small_k, nwarps);
++    constexpr int rows_per_cuda_block = row_override ? row_override : calc_rows_per_block(ncols_dst, table_id, small_k, nwarps);
+     constexpr int warp_size = ggml_cuda_get_physical_warp_size();
+ 
+     constexpr vec_dot_q_cuda_t vec_dot_q_cuda = get_vec_dot_q_cuda(type);
+@@ -661,6 +670,16 @@
+         // x block quant index when casting the quants to int
+         const int kqs = vdr * (tid % (qi/vdr));
+ 
++        if constexpr (row_first) {
++            static_assert(!has_fusion, "Row-first prototype excludes fusion");
++#pragma unroll
++            for (int i = 0; i < rows_per_cuda_block; ++i) {
++#pragma unroll
++                for (int j = 0; j < ncols_dst; ++j) {
++                    tmp[j][i] += vec_dot_q_cuda(vx, &y[j*stride_col_y + kby], kbx_offset + i*stride_row_x + kbx, kqs);
++                }
++            }
++        } else {
+ #pragma unroll
+         for (int j = 0; j < ncols_dst; ++j) {
+ #pragma unroll
+@@ -675,6 +694,7 @@
+                 }
+             }
+         }
++        }
+     }
+ 
+     __shared__ float tmp_shared[nwarps-1 > 0 ? nwarps-1 : 1][ncols_dst][rows_per_cuda_block][warp_size];
+@@ -990,6 +1010,126 @@
+         return idle * 8 <= iters_wide * 2;
+     };
+ 
++    if constexpr (type == GGML_TYPE_IQ3_XXS || type == GGML_TYPE_IQ3_S || type == GGML_TYPE_IQ2_S ||
++            type == GGML_TYPE_IQ2_XXS || type == GGML_TYPE_IQ2_XS || type == GGML_TYPE_IQ4_XS) {
++        static const bool enabled = [] {
++            const char * value = getenv("GGML_CUDA_Q3_ROW_TILES");
++            return value && strcmp(value, "6") == 0;
++        }();
++        const bool fused = fusion.gate || fusion.x_bias || fusion.gate_bias || fusion.x_scale || fusion.gate_scale;
++        const bool shape = (ncols_x == 5120 && (nrows_x == 17408 || nrows_x == 5120 || nrows_x == 6144 || nrows_x == 10240 || nrows_x == 12288)) ||
++                ((ncols_x == 17408 || ncols_x == 6144) && nrows_x == 5120);
++        const bool measured_control = ncols_x != nrows_x || type == GGML_TYPE_IQ3_XXS || type == GGML_TYPE_IQ3_S || type == GGML_TYPE_IQ2_S;
++        const bool beneficial = (type != GGML_TYPE_IQ2_XS || ncols_x != 17408) &&
++                (type != GGML_TYPE_IQ4_XS || ncols_x != 6144);
++        const bool contiguous = nchannels_x == 1 && nchannels_y == 1 && nchannels_dst == 1 && nsamples_x == 1 && nsamples_dst == 1 &&
++                stride_row_x == ncols_x / 256 && stride_col_y == ncols_x / 32 && stride_col_dst == nrows_x;
++        if (enabled && cc == 860 && ncols_dst == 5 && !has_ids && !fused && shape && measured_control && beneficial && contiguous) {
++            using block_type = typename rw_fold_quant<type>::type;
++            const auto launch = [&](auto rows_tag) {
++                constexpr int rows = decltype(rows_tag)::value;
++                constexpr bool first = type != GGML_TYPE_IQ3_XXS && type != GGML_TYPE_IQ2_XXS;
++                constexpr int bounds = rows == 8 ? 1 : type == GGML_TYPE_IQ4_XS ? 12 : 16;
++                const ggml_cuda_kernel_launch_params params(dim3(nrows_x / rows), dim3(32), 0, stream);
++                ggml_cuda_kernel_launch(rw_folded<block_type, rows, first, bounds>, params,
++                        (const block_type *) vx, (const block_q8_1 *) vy, dst, ncols_x / 256, nrows_x);
++            };
++            if constexpr (type == GGML_TYPE_IQ3_S) {
++                if (ncols_x == nrows_x) launch(std::integral_constant<int,4>{});
++                else launch(std::integral_constant<int,8>{});
++            } else if constexpr (type == GGML_TYPE_IQ2_S) launch(std::integral_constant<int,8>{});
++            else launch(std::integral_constant<int,4>{});
++            return;
++        }
++    }
++
++    if constexpr (type == GGML_TYPE_IQ3_XXS || type == GGML_TYPE_IQ3_S || type == GGML_TYPE_IQ2_S ||
++            type == GGML_TYPE_IQ2_XXS || type == GGML_TYPE_IQ2_XS || type == GGML_TYPE_Q2_K || type == GGML_TYPE_IQ4_XS) {
++        static const bool short_tiles = [] {
++            const char * value = getenv("GGML_CUDA_Q3_ROW_TILES");
++            return value && (strcmp(value, "4") == 0 || strcmp(value, "6") == 0);
++        }();
++        const bool fused = fusion.gate || fusion.x_bias || fusion.gate_bias || fusion.x_scale || fusion.gate_scale;
++        const bool shape = (ncols_x == 5120 && (nrows_x == 17408 || nrows_x == 5120 || nrows_x == 6144 || nrows_x == 10240 || nrows_x == 12288)) ||
++            ((ncols_x == 17408 || ncols_x == 6144) && nrows_x == 5120);
++        const bool iq4_shape = type != GGML_TYPE_IQ4_XS ||
++            (ncols_dst == 3 ? ncols_x == 17408 : ncols_x != 17408);
++        if (short_tiles && cc == 860 && (ncols_dst == 3 || ncols_dst == 4) && !has_ids && !fused && shape && iq4_shape) {
++            const auto launch = [&](auto columns_tag) {
++                constexpr int columns = decltype(columns_tag)::value;
++                constexpr int rows = type == GGML_TYPE_Q2_K ||
++                    (columns == 4 && (type == GGML_TYPE_IQ2_S || type == GGML_TYPE_IQ2_XS)) ? 8 : 4;
++                constexpr bool first = type != GGML_TYPE_IQ4_XS;
++                const dim3 grid(nrows_x / rows, nchannels_dst, nsamples_dst);
++                const dim3 block(warp_size, calc_nwarps(type, columns, table_id));
++                const ggml_cuda_kernel_launch_params params(grid, block, 0, stream);
++                ggml_cuda_kernel_launch(mul_mat_vec_q<type, columns, false, false, false, rows, first>, params,
++                    vx, vy, ids, fusion, dst, ncols_x, nchannels_y_fd, stride_row_x, stride_col_y, stride_col_dst,
++                    channel_ratio_fd, stride_channel_x, stride_channel_y, stride_channel_dst,
++                    sample_ratio_fd, stride_sample_x, stride_sample_y, stride_sample_dst, ids_stride);
++            };
++            if (ncols_dst == 3) launch(std::integral_constant<int,3>{});
++            else launch(std::integral_constant<int,4>{});
++            return;
++        }
++    }
++
++    if constexpr (type == GGML_TYPE_IQ2_XXS || type == GGML_TYPE_IQ2_XS || type == GGML_TYPE_Q2_K || type == GGML_TYPE_IQ4_XS) {
++        static const bool enabled = [] {
++            const char * value = getenv("GGML_CUDA_Q3_ROW_TILES");
++            return value && (strcmp(value, "3") == 0 || strcmp(value, "4") == 0 || strcmp(value, "6") == 0);
++        }();
++        const bool fused = fusion.gate || fusion.x_bias || fusion.gate_bias || fusion.x_scale || fusion.gate_scale;
++        const bool shape = (ncols_x == 5120 && (nrows_x == 17408 || nrows_x == 6144 || nrows_x == 10240 || nrows_x == 12288)) ||
++            ((ncols_x == 17408 || ncols_x == 6144) && nrows_x == 5120);
++        if (enabled && cc == 860 && ncols_dst == 5 && !has_ids && !fused && shape) {
++            constexpr bool first = type != GGML_TYPE_IQ2_XXS;
++            const dim3 grid(nrows_x / 4, nchannels_dst, nsamples_dst);
++            const dim3 block(warp_size, calc_nwarps(type, 5, table_id));
++            const ggml_cuda_kernel_launch_params params(grid, block, 0, stream);
++            ggml_cuda_kernel_launch(mul_mat_vec_q<type, 5, false, false, false, 4, first>, params,
++                vx, vy, ids, fusion, dst, ncols_x, nchannels_y_fd, stride_row_x, stride_col_y, stride_col_dst,
++                channel_ratio_fd, stride_channel_x, stride_channel_y, stride_channel_dst,
++                sample_ratio_fd, stride_sample_x, stride_sample_y, stride_sample_dst, ids_stride);
++            return;
++        }
++    }
++
++    if constexpr (type == GGML_TYPE_IQ3_XXS || type == GGML_TYPE_IQ3_S || type == GGML_TYPE_IQ2_S) {
++        static const bool enabled = [] {
++            const char * value = getenv("GGML_CUDA_Q3_ROW_TILES");
++            return value && (strcmp(value, "1") == 0 || strcmp(value, "2") == 0 || strcmp(value, "3") == 0 || strcmp(value, "4") == 0 || strcmp(value, "6") == 0);
++        }();
++        const bool fused = fusion.gate || fusion.x_bias || fusion.gate_bias || fusion.x_scale || fusion.gate_scale;
++        static const bool projections = [] {
++            const char * value = getenv("GGML_CUDA_Q3_ROW_TILES");
++            return value && (strcmp(value, "2") == 0 || strcmp(value, "3") == 0 || strcmp(value, "4") == 0 || strcmp(value, "6") == 0);
++        }();
++        const bool original_shape = (ncols_x == 5120 && (nrows_x == 17408 || nrows_x == 5120)) || (ncols_x == 17408 && nrows_x == 5120);
++        const bool projection_shape = (ncols_x == 5120 && (nrows_x == 6144 || nrows_x == 10240 || nrows_x == 12288)) || (ncols_x == 6144 && nrows_x == 5120);
++        const bool shape = original_shape || (projections && projection_shape);
++        if (enabled && cc == 860 && ncols_dst == 5 && !has_ids && !fused && shape) {
++            const auto launch = [&](auto rows_tag) {
++                constexpr int rows = decltype(rows_tag)::value;
++                constexpr bool first = type != GGML_TYPE_IQ3_XXS;
++                const dim3 grid(nrows_x / rows, nchannels_dst, nsamples_dst);
++                const dim3 block(warp_size, calc_nwarps(type, 5, table_id));
++                const ggml_cuda_kernel_launch_params params(grid, block, 0, stream);
++                ggml_cuda_kernel_launch(mul_mat_vec_q<type, 5, false, false, false, rows, first>, params,
++                    vx, vy, ids, fusion, dst, ncols_x, nchannels_y_fd, stride_row_x, stride_col_y, stride_col_dst,
++                    channel_ratio_fd, stride_channel_x, stride_channel_y, stride_channel_dst,
++                    sample_ratio_fd, stride_sample_x, stride_sample_y, stride_sample_dst, ids_stride);
++            };
++            if constexpr (type == GGML_TYPE_IQ3_XXS) launch(std::integral_constant<int,4>{});
++            if constexpr (type == GGML_TYPE_IQ2_S) launch(std::integral_constant<int,8>{});
++            if constexpr (type == GGML_TYPE_IQ3_S) {
++                if (ncols_x == nrows_x) launch(std::integral_constant<int,4>{});
++                else launch(std::integral_constant<int,8>{});
++            }
++            return;
++        }
++    }
++
+     if (has_ids && ncols_dst > 1) {
+         // Multi-token MUL_MAT_ID path - dedicated MoE kernel
+         mul_mat_vec_q_moe_launch<type>(
+--- /dev/null
++++ b/ggml/src/ggml-cuda/sparse-kv.cuh
+@@ -0,0 +1,105 @@
++#pragma once
++
++#include <cuda.h>
++#include <algorithm>
++#include <cstdint>
++#include <stdexcept>
++#include <vector>
++
++// Private single-device prototype. Call outside graph capture with the owning context current.
++class rw_cuda_sparse_buffer {
++    CUdeviceptr base = 0;
++    CUmemAllocationProp prop = {};
++    size_t logical_size;
++    size_t reserve_size;
++    size_t page_size;
++    size_t mapped_bytes = 0;
++    size_t budget;
++    unsigned char clear_value = 0;
++    std::vector<unsigned char> mapped;
++
++public:
++    static void cuda_check(CUresult result) {
++        if (result == CUDA_SUCCESS) return;
++        const char * message = nullptr;
++        cuGetErrorString(result, &message);
++        throw std::runtime_error(message ? message : "CUDA sparse memory error");
++    }
++
++    rw_cuda_sparse_buffer(int device, size_t bytes, size_t max_physical = SIZE_MAX) : logical_size(bytes), budget(max_physical) {
++        prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
++        prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
++        prop.location.id = device;
++        size_t minimum;
++        cuda_check(cuMemGetAllocationGranularity(&minimum, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM));
++        page_size = ((2 * 1024 * 1024 + minimum - 1) / minimum) * minimum;
++        if (!bytes || bytes > SIZE_MAX - page_size) throw std::runtime_error("Invalid sparse reservation size");
++        reserve_size = ((bytes + page_size - 1) / page_size) * page_size;
++        mapped.resize(reserve_size / page_size, 0);
++        cuda_check(cuMemAddressReserve(&base, reserve_size, page_size, 0, 0));
++    }
++
++    rw_cuda_sparse_buffer(const rw_cuda_sparse_buffer &) = delete;
++    rw_cuda_sparse_buffer & operator=(const rw_cuda_sparse_buffer &) = delete;
++
++    ~rw_cuda_sparse_buffer() {
++        if (!base) return;
++        cuCtxSynchronize();
++        for (size_t i = 0; i < mapped.size(); ++i) {
++            if (mapped[i]) cuMemUnmap(base + i * page_size, page_size);
++        }
++        cuMemAddressFree(base, reserve_size);
++    }
++
++    CUdeviceptr data() const { return base; }
++    size_t size() const { return logical_size; }
++    size_t committed() const { return mapped_bytes; }
++
++    bool ensure(size_t offset, size_t bytes, void (*reclaim)(size_t) = nullptr) {
++        if (offset > logical_size || bytes > logical_size - offset) return false;
++        if (!bytes) return true;
++        const size_t begin = offset / page_size;
++        const size_t end = (offset + bytes + page_size - 1) / page_size;
++        size_t missing = 0;
++        for (size_t i = begin; i < end; ++i) missing += !mapped[i];
++        if (!missing) return true;
++        if (missing > (budget - mapped_bytes) / page_size) return false;
++        if (reclaim) reclaim(missing * page_size);
++        cuda_check(cuCtxSynchronize());
++        std::vector<size_t> added;
++        added.reserve(missing);
++        CUmemAccessDesc access = {};
++        access.location = prop.location;
++        access.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
++        try {
++            for (size_t i = begin; i < end; ++i) {
++                if (mapped[i]) continue;
++                CUmemGenericAllocationHandle handle;
++                const CUresult allocated = cuMemCreate(&handle, page_size, &prop, 0);
++                if (allocated != CUDA_SUCCESS) cuda_check(allocated);
++                const CUresult result = cuMemMap(base + i * page_size, page_size, 0, handle, 0);
++                cuMemRelease(handle);
++                cuda_check(result);
++                added.push_back(i);
++                cuda_check(cuMemSetAccess(base + i * page_size, page_size, &access, 1));
++                cuda_check(cuMemsetD8(base + i * page_size, clear_value, page_size));
++            }
++        } catch (const std::runtime_error &) {
++            cuCtxSynchronize();
++            for (size_t i : added) cuMemUnmap(base + i * page_size, page_size);
++            return false;
++        }
++        for (size_t i : added) mapped[i] = 1;
++        mapped_bytes += added.size() * page_size;
++        return true;
++    }
++
++    void clear(unsigned char value) {
++        cuda_check(cuCtxSynchronize());
++        for (size_t i = 0; i < mapped.size(); ++i) {
++            if (mapped[i]) cuda_check(cuMemsetD8(base + i * page_size, value, page_size));
++        }
++        cuda_check(cuCtxSynchronize());
++        clear_value = value;
++    }
++};
+--- a/src/llama-kv-cache.cpp
++++ b/src/llama-kv-cache.cpp
+@@ -280,7 +280,15 @@
+                 t->buffer = buf; // set dummy buffer for KV cache so that the backend scheduler won't try to allocate it
+             }
+         } else {
+-            buf = ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), buft); // real buffer
++            using sparse_alloc_fn = ggml_backend_buffer_t (*)(ggml_context *, ggml_backend_buffer_type_t);
++            sparse_alloc_fn alloc = nullptr;
++            const char * sparse = getenv("LLAMA_CUDA_SPARSE_KV");
++            if (sparse && strcmp(sparse, "1") == 0 && !v_trans && n_stream == 1 && model.arch == LLM_ARCH_QWEN35) {
++                auto * dev = ggml_backend_buft_get_device(buft);
++                auto * reg = dev ? ggml_backend_dev_backend_reg(dev) : nullptr;
++                if (reg) alloc = (sparse_alloc_fn) ggml_backend_reg_get_proc_address(reg, "ggml_backend_cuda_alloc_sparse_kv");
++            }
++            buf = alloc ? alloc(ctx.get(), buft) : ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), buft);
+         }
+         if (!buf) {
+             throw std::runtime_error("failed to allocate buffer for kv cache");
+@@ -853,6 +861,7 @@
+     }
+ 
+     if (do_shift) {
++        if (!commit_kv(get_size())) return false;
+         if (!get_can_shift()) {
+             GGML_ABORT("The current KV cache / model configuration does not support K-shift");
+         }
+@@ -1248,6 +1257,20 @@
+     return result;
+ }
+ 
++bool llama_kv_cache::commit_kv(uint32_t n_kv) const {
++    using ensure_fn = bool (*)(const ggml_tensor *, size_t, size_t);
++    for (const auto & layer : layers) {
++        for (auto * tensor : { layer.k, layer.v }) {
++            if (!tensor || !tensor->buffer) continue;
++            auto * dev = ggml_backend_buft_get_device(ggml_backend_buffer_get_type(tensor->buffer));
++            auto * reg = dev ? ggml_backend_dev_backend_reg(dev) : nullptr;
++            auto ensure = reg ? (ensure_fn) ggml_backend_reg_get_proc_address(reg, "ggml_backend_cuda_sparse_ensure") : nullptr;
++            if (ensure && !ensure(tensor, 0, n_kv * tensor->nb[1])) return false;
++        }
++    }
++    return true;
++}
++
+ ggml_tensor * llama_kv_cache::get_k(ggml_context * ctx, int32_t il, uint32_t n_kv, const slot_info & sinfo) const {
+     const int32_t ikv = map_layer_ids.at(il);
+ 
+@@ -2515,6 +2538,13 @@
+     n_kv = kv->get_size();
+ 
+     const uint32_t n_stream = kv->get_n_stream();
++    const char * reserve = getenv("LLAMA_Q3_RESERVE_TOKENS");
++    const char * sparse = getenv("LLAMA_CUDA_SPARSE_KV");
++    if (reserve && strcmp(reserve, "4096") == 0 && sparse && strcmp(sparse, "1") == 0 &&
++            n_stream == 1 && kv->type_k() == GGML_TYPE_Q4_0 && kv->type_v() == GGML_TYPE_Q4_0) {
++        n_kv = std::min(n_kv, int32_t(4096));
++        LLAMA_LOG_INFO("RESERVE_KV initial=%d capacity=%u graph-only\n", n_kv, kv->get_size());
++    }
+ 
+     // create a dummy slot info - the actual data is irrelevant. we just need to build the graph
+     sinfos.resize(1);
+@@ -2567,6 +2597,10 @@
+ 
+     kv->apply_ubatch(sinfos[i_cur], ubatches[i_cur]);
+     n_kv = kv->get_n_kv(sinfos[i_cur]);
++    if (!kv->commit_kv(n_kv)) {
++        status = LLAMA_MEMORY_STATUS_FAILED_COMPUTE;
++        return false;
++    }
+ 
+     return true;
+ }
+--- a/src/llama-kv-cache.h
++++ b/src/llama-kv-cache.h
+@@ -171,6 +171,7 @@
+     //
+ 
+     uint32_t get_n_kv(const slot_info & sinfo) const;
++    bool commit_kv(uint32_t n_kv) const;
+ 
+     // get views of the current state of the cache
+     ggml_tensor * get_k(ggml_context * ctx, int32_t il, uint32_t n_kv, const slot_info & sinfo) const;
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -51,6 +51,25 @@
+     return result;
+ }
+ 
++static std::vector<llama_token> server_accept_replay(
++        common_sampler * smpl,
++        llama_context * ctx,
++        const std::vector<int32_t> & idxs,
++        const llama_tokens & draft) {
++    GGML_ASSERT(idxs.size() == draft.size() + 1);
++    std::vector<llama_token> result;
++    result.reserve(idxs.size());
++    for (size_t i = 0; i < draft.size(); ++i) {
++        common_sampler_sample(smpl, ctx, idxs[i]);
++        common_sampler_accept(smpl, draft[i], true);
++        result.push_back(draft[i]);
++    }
++    const llama_token id = common_sampler_sample(smpl, ctx, idxs[draft.size()]);
++    common_sampler_accept(smpl, id, true);
++    result.push_back(id);
++    return result;
++}
++
+ // state diagram: https://github.com/ggml-org/llama.cpp/pull/9283
+ enum slot_state {
+     SLOT_STATE_IDLE,
+@@ -225,6 +244,7 @@
+     common_speculative * spec;
+ 
+     llama_tokens spec_draft;
++    std::vector<std::vector<llama_token_data>> spec_draft_q;
+     llama_tokens spec_prompt;
+     std::vector<int32_t> spec_i_batch;
+     std::vector<common_speculative_alternative> spec_alternatives;
+@@ -243,6 +263,7 @@
+     llama_token spec_branch_token = LLAMA_TOKEN_NULL;
+     common_prompt_checkpoint spec_ckpt;
+     bool spec_is_replay = false;
++    bool spec_replay_rejection = false;
+ 
+     // TODO: move members that belong to the task (such as `generated_text`, `has_new_line`) to task_results_state
+     //       see https://github.com/ggml-org/llama.cpp/pull/18283#issuecomment-3710175837
+@@ -356,6 +377,8 @@
+         SLT_DBG(*this, "%s", "\n");
+ 
+         spec_is_replay = false;
++        spec_replay_rejection = false;
++        spec_draft_q.clear();
+ 
+         last_nl_pos    = 0;
+         generated_text = "";
+@@ -497,6 +520,15 @@
+         return n_draft_max;
+     }
+ 
++    bool use_spec_rejection() const {
++        if (!task) {
++            return false;
++        }
++        const auto & sampling = task->params.sampling;
++        return sampling.temp > 0.0f && sampling.mirostat == 0 && sampling.adaptive_target < 0.0f &&
++            sampling.xtc_probability == 0.0f && sampling.grammar.empty();
++    }
++
+     // add sampled token of this slot to the batch, optionally add the speculative draft tokens if any
+     void handle_last_sampled_token(server_batch & batch) {
+         bool add_ok = true;
+@@ -3022,6 +3054,7 @@
+ 
+                 if (n_draft_max > 0) {
+                     GGML_ASSERT(slot.can_speculate());
++                    slot.spec_draft_q.clear();
+ 
+                     if (!slot.spec_draft.empty()) {
+                         // we have a previous (partial) draft to reuse
+@@ -3050,6 +3083,9 @@
+                             /* .prompt   = */ &slot.spec_prompt,
+                             /* .result   = */ &slot.spec_draft,
+                             /* .alternatives = */ &slot.spec_alternatives,
++                            /* .result_q = */ slot.use_spec_rejection() && !packed_gdn_tree && !bvf_branch ? &slot.spec_draft_q : nullptr,
++                            /* .temp = */ slot.task->params.sampling.temp,
++                            /* .seed = */ slot.task->params.sampling.seed,
+                         };
+ 
+                         drafting.push_back(&slot);
+@@ -4147,7 +4183,17 @@
+                 };
+ 
+                 GGML_ASSERT(slot.spec_i_batch.size() == n_draft + 1);
+-                auto accepted = common_sampler_sample_and_accept_n(slot.smpl.get(), slot.ctx_tgt, slot.spec_i_batch, slot.spec_draft);
++                GGML_ASSERT(slot.spec_draft_q.empty() || slot.spec_draft_q.size() == n_draft);
++                const bool use_rejection = slot.use_spec_rejection() && !slot.spec_draft_q.empty();
++                std::vector<llama_token> accepted;
++                if (slot.spec_is_replay && slot.spec_replay_rejection) {
++                    accepted = server_accept_replay(slot.smpl.get(), slot.ctx_tgt, slot.spec_i_batch, slot.spec_draft);
++                } else if (use_rejection) {
++                    accepted = common_sampler_sample_and_accept_n_rejection(
++                            slot.smpl.get(), slot.ctx_tgt, slot.spec_i_batch, slot.spec_draft, slot.spec_draft_q);
++                } else {
++                    accepted = common_sampler_sample_and_accept_n(slot.smpl.get(), slot.ctx_tgt, slot.spec_i_batch, slot.spec_draft);
++                }
+                 slot.spec_i_batch.clear();
+ 
+                 GGML_ASSERT(accepted.size() >= 1);
+@@ -4211,6 +4257,7 @@
+ 
+                         // partial acceptance is not supported by the context -> truncate the draft and restore the state
+                         slot.spec_is_replay = true;
++                        slot.spec_replay_rejection = use_rejection || slot.spec_replay_rejection;
+                         slot.spec_draft = std::move(accepted);
+ 
+                         const auto & ckpt = slot.spec_ckpt;
+@@ -4226,6 +4273,7 @@
+                         slot.mem.seq_rm(slot.id, ckpt.pos_max + 1, -1);
+ 
+                         slot.prompt.tokens.keep_first(ckpt.n_tokens);
++                        common_sampler_copy_rejection_rng(slot.smpl.get(), smpl_save.get());
+                         common_sampler_copy(smpl_save.get(), slot.smpl.get());
+ 
+                         if (slot.spec_branch_seq_id >= 0) {
+@@ -4284,6 +4332,7 @@
+                 n_accepted--;
+             }
+             slot.spec_is_replay = false;
++            slot.spec_replay_rejection = false;
+ 
+             slot.stats.update_gen_last();

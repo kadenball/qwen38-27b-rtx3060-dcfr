@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/q3-env.sh"
-args=(-m "$model" --alias "routeweaver-q3-$context" --host 127.0.0.1 --port "$port"
+alias="routeweaver-q3-$context"
+[[ "$variant" != fast ]] || alias="routeweaver-q3-fast-$context"
+args=(-m "$model" --alias "$alias" --host 127.0.0.1 --port "$port"
     --parallel 1 --ctx-size "$context" --ctx-checkpoints 4 --load-mode none
     --n-gpu-layers all --fit off --device CUDA0
     --cache-type-k q4_0 --cache-type-v q4_0
@@ -12,6 +14,7 @@ args=(-m "$model" --alias "routeweaver-q3-$context" --host 127.0.0.1 --port "$po
     --temp 1 --top-p 0.95 --top-k 20 --min-p 0 --n-predict "$output" --no-ui --metrics)
 if [[ "$speculation" == mtp ]]; then
     args+=(--spec-type draft-mtp --spec-draft-n-max "$depth" --spec-draft-p-min 0 --spec-draft-type-k q4_0 --spec-draft-type-v q4_0)
+    [[ "$variant" != fast ]] || args+=(--spec-draft-sampling probabilistic)
 else
     args+=(--spec-type none)
 fi

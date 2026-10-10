@@ -2,6 +2,14 @@
 
 The structured JSON files are the authoritative result summaries:
 
+- `q3-fast-20261008.json` records the opt-in Fast runtime's three-seed short,
+  one-seed broader and 30K occupied comparisons. Its control is the immediate
+  preceding experimental preset, not the October 5 default or plain decode.
+- `q3-fast-heldout-fixtures.json` defines the eight broader timing prompts,
+  including a separately labeled easy anchor. See [scope](../docs/q3-fast.md).
+- `q3-fast-export-verification-20261010.json` separates fresh CPU/package checks
+  from the historical GPU performance runs; no fresh GPU rerun was performed.
+
 - `q3-cache-safe-20261005.json` records the five-seed same-RCO-GGUF comparison,
   individual timings/output hashes, acceptance, occupied-context and 96K screens.
 - `q3-fixtures.json` defines the October 5 requests and sampling settings.

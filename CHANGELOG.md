@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-10 - Q3 Fast experimental source export
+
+- Exported the selected October 8 probability-based MTP verifier, sparse CUDA
+  KV allocator, evictable host-weight cache, row-tile kernels and scratch policy.
+- Added a source-pinned, isolated `Q3_VARIANT=fast` 128K text/tools build and
+  launcher; existing candidate/baseline builds and automatic-tuner defaults remain.
+- Published three-seed short, one-seed broader and 30K occupied timing screens,
+  acceptance, output hashes, memory samples and explicit long-context limits.
+- Added a model-free rejection-sampling test and a configurable fixture runner.
+- Restricted release checksum generation to tracked/staged files.
+
 ## 2026-10-06 - Experimental guided setup and hardware tuner
 
 - Added the project-local `routeweaver` setup/doctor/tune/start/status/rollback CLI.
